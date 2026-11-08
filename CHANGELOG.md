@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Setting `fsharp_align_rows` lays out rows of the same shape as a table. [#7](https://github.com/shazmodan/fantomas-team-auth/pull/7)
+- Setting `fsharp_align_match_arrows` lines up the arrows of consecutive one-line match clauses. [#7](https://github.com/shazmodan/fantomas-team-auth/pull/7)
+- Setting `fsharp_hanging_infix_operators` hangs the operators of a long chain after the equals sign. [#7](https://github.com/shazmodan/fantomas-team-auth/pull/7)
+- Value `patterns_only` for `fsharp_space_around_delimiter` leaves the space out of list and array expressions only. [#7](https://github.com/shazmodan/fantomas-team-auth/pull/7)
+
 ## [8.1.1] - 2026-11-03
 
 ### Fixed
