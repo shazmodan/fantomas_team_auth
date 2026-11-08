@@ -72,6 +72,40 @@ upstream's changelog publishes nothing until you add your own section.
 Use `-svea.N`, not a four part version such as `8.1.1.1`. `Fantomas.Client` reads the version as
 semver and ignores a tool it cannot parse.
 
+### The release runner
+
+The release job runs on the owner's own Windows machine, registered with this repository as a
+self-hosted runner, rather than on one of GitHub's: a release then costs no Actions minutes. The
+pull request checks in `main.yml` still run on GitHub's runners. A release waits in the queue until
+the machine is online, and GitHub cancels a job that has waited 24 hours.
+
+The machine needs:
+
+- **Git for Windows.** The workflow's steps run in its `bash`, and the checkout needs `git`. Its
+  `bin` folder (`C:\Program Files\Git\bin`) has to come before `C:\Windows\System32` on the
+  `PATH`, or a machine with WSL runs WSL's `bash.exe` instead.
+- **The GitHub CLI**, `gh`, which creates the tag and the release. GitHub's own runners have it
+  installed; a machine of your own does not.
+- Nothing else: the workflow installs the .NET SDK itself, into the runner's tool cache.
+
+To register the machine:
+
+1. On GitHub, open the repository, then **Settings**, **Actions**, **Runners**,
+   **New self-hosted runner**, and choose **Windows** and **x64**.
+2. In PowerShell on the machine, run the commands that page shows, in order. They download the
+   runner into a folder such as `C:\actions-runner`, then register it with `config.cmd` and a token
+   that expires after an hour, so register it soon after opening the page.
+3. Keep the default runner group, name and labels when `config.cmd` asks: the workflow asks for
+   the labels `self-hosted`, `Windows` and `X64`, which every Windows x64 runner gets.
+4. Answer yes when it offers to run the runner as a service, so it starts with Windows. Otherwise
+   start it with `run.cmd` whenever a release is due.
+
+The runner appears as **Idle** under **Settings**, **Actions**, **Runners** once it is connected.
+
+To start a release again without a new commit, use **Actions**, **Release (Team Auth)**,
+**Run workflow** on `main`. **Re-run jobs** on an old run does not do it: a re-run uses the
+workflow as it was at that run's commit, so it would ask for the runner that commit named.
+
 ## Adding it to an F# repository
 
 The steps below assume a release has been published (see "Releasing"): until the release workflow

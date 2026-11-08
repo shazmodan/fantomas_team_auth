@@ -30,8 +30,11 @@ env:
 
 jobs:
   release:
-    # Team Auth only runs Fantomas on Windows, so the tests that gate a release run there too.
-    runs-on: windows-latest
+    # Team Auth only runs Fantomas on Windows, so the tests that gate a release run there too. The
+    # machine is the owner's own, registered as a self-hosted runner, so a release costs no Actions
+    # minutes; these are the labels every Windows x64 runner gets. A release waits for that machine
+    # to be online. TEAM-AUTH.md, "The release runner", says what it needs installed.
+    runs-on: [self-hosted, Windows, X64]
     # Every step is written for bash, which Git for Windows provides on the runner. Without this a
     # step with no `shell` would run in PowerShell, where "$PACKAGE" is not the environment variable.
     defaults:
@@ -68,6 +71,10 @@ jobs:
     - name: Setup .NET
       if: steps.version.outputs.release == 'true'
       uses: actions/setup-dotnet@v6
+      env:
+        # Into the runner's own tool cache rather than Program Files, which a runner installed as a
+        # service, running as NETWORK SERVICE, cannot write to.
+        DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
       with:
         cache: true
         cache-dependency-path: Directory.Packages.props
