@@ -692,14 +692,28 @@ let ``a configuration that cannot be read at all is an error, and clears the war
 
     (theOnlyWarning warnings).Problems |> should be Empty
 
-/// A `ReadConfiguration` that holds each caller inside it long enough to overlap with another, and
-/// remembers how many were ever inside at once.
+/// How long a caller of `countingOverlaps` waits inside for a second one. Only a test that expects no
+/// overlap waits it out in full, once for each of its two requests, and it is the window in which a
+/// gate that let the second request in would be caught.
+[<Literal>]
+let private overlapWindowInMs: int = 2_000
+
+/// A `ReadConfiguration` that holds each caller inside it until a second caller is inside too, or
+/// `overlapWindowInMs` has passed, and remembers how many were ever inside at once.
+///
+/// It waits for the second caller rather than sleeping for a fixed time. The caller blocks a thread
+/// pool thread while it is inside, and on a runner with two cores the pool can take longer than a
+/// short sleep to start the second request, so a sleep of 100 ms reported no overlap for two files
+/// that do run at the same time.
 let private countingOverlaps () =
     let inFlight = ref 0
     let peak = ref 0
 
+    let bothInside: System.Threading.ManualResetEventSlim =
+        new System.Threading.ManualResetEventSlim(false)
+
     let readConfiguration (_: string) : EditorConfigFiles.EditorConfigResult option =
-        let now = System.Threading.Interlocked.Increment inFlight
+        let now: int = System.Threading.Interlocked.Increment inFlight
 
         let rec recordPeak () =
             let seen = peak.Value
@@ -709,7 +723,11 @@ let private countingOverlaps () =
                     recordPeak ()
 
         recordPeak ()
-        System.Threading.Thread.Sleep 100
+
+        if now >= 2 then
+            bothInside.Set()
+
+        bothInside.Wait overlapWindowInMs |> ignore<bool>
         System.Threading.Interlocked.Decrement inFlight |> ignore
         None
 
