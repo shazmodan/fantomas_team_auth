@@ -36,6 +36,20 @@ semver and ignores a tool it cannot parse.
 
 ## Using it in a team repository
 
+### Access to the package
+
+This repository is private, so the package it publishes is private too: GitHub Packages gives a
+package the visibility of the repository it is linked to. Nobody but the owner can restore it until
+they are given access in the package's settings. That page exists once the first release has been
+published: on the owner's profile, **Packages**, `fantomas`, **Package settings**.
+
+- **People:** under **Manage access**, add each team member with the **Read** role.
+- **Other repositories' CI:** under **Manage Actions access**, add each repository whose workflows
+  restore the tool, with the **Read** role.
+
+A token on its own is not enough. Someone without access gets a `401` or `403` from the feed, even
+with a token that has the `read:packages` scope.
+
 ### Authentication
 
 GitHub Packages asks for a token even to read a public package. Each developer creates a personal
@@ -48,8 +62,20 @@ dotnet nuget update source svea --username <github-user> --password <token> --st
 (Run it after the `NuGet.config` below is in the repo. On Windows the password is encrypted and the
 last flag can be left out.)
 
-In GitHub Actions in the same organisation, `secrets.GITHUB_TOKEN` with `packages: read` is enough,
-once the package's settings give that repository access.
+In another repository's GitHub Actions workflow, its own `secrets.GITHUB_TOKEN` is enough, once
+that repository has been given access under **Manage Actions access**. The job needs
+`packages: read`, and the token has to be stored before the restore:
+
+```yaml
+permissions:
+  contents: read
+  packages: read
+steps:
+  - uses: actions/checkout@v7.0.1
+  - uses: actions/setup-dotnet@v6
+  - run: dotnet nuget update source svea --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
+  - run: dotnet tool restore
+```
 
 ### NuGet.config
 
