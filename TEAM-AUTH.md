@@ -82,8 +82,9 @@ the machine is online, and GitHub cancels a job that has waited 24 hours.
 The machine needs:
 
 - **Git for Windows**, installed in its default folder, `C:\Program Files\Git`. The workflow's steps
-  run in its `bash`, named by that path so that WSL's `bash.exe` in `C:\Windows\System32` is never
-  picked up instead, and the checkout needs `git`.
+  run in its `bash`, and the checkout needs `git`. The job's first step puts `C:\Program Files\Git\bin`
+  at the front of its `PATH`, so WSL's `bash.exe` in `C:\Windows\System32` is never picked up
+  instead, and the machine's own `PATH` can stay as it is.
 - **The GitHub CLI**, `gh`, which creates the tag and the release. GitHub's own runners have it
   installed; a machine of your own does not.
 - Nothing else: the workflow installs the .NET SDK itself, into the runner's tool cache.

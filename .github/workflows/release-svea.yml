@@ -37,12 +37,10 @@ jobs:
     runs-on: [self-hosted, Windows, X64]
     # Every step is written for bash, which Git for Windows provides on the runner. Without this a
     # step with no `shell` would run in PowerShell, where "$PACKAGE" is not the environment variable.
-    # Git's bash is named by its path rather than as `shell: bash`, which takes the first bash.exe on
-    # the PATH: on a machine with WSL that is C:\Windows\System32\bash.exe, which fails every step
-    # when no Linux distribution is installed. The options are the ones `shell: bash` passes.
+    # `shell: bash` runs the first bash.exe on the PATH, which the first step makes Git's.
     defaults:
       run:
-        shell: '"C:\Program Files\Git\bin\bash.exe" --noprofile --norc -e -o pipefail {0}'
+        shell: bash
     permissions:
       # The tag and the GitHub release.
       contents: write
@@ -50,6 +48,16 @@ jobs:
       packages: write
 
     steps:
+    # On a machine with WSL, the first bash.exe on the PATH is C:\Windows\System32\bash.exe, which
+    # fails every step when no Linux distribution is installed. A folder written to GITHUB_PATH goes
+    # to the front of the PATH of every later step, so this puts Git's bash ahead of it. It runs in
+    # cmd, which every Windows has, and whose echo writes plain text: Windows PowerShell's Out-File
+    # writes UTF-16 unless told otherwise. A program path cannot be given to `shell:` instead: the
+    # runner does not accept one in quotes, and C:\Program Files has a space.
+    - name: Put Git's bash first on the PATH
+      shell: cmd
+      run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
+
     - uses: actions/checkout@v7.0.1
 
     - name: Decide whether to release
