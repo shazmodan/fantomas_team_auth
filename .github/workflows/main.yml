@@ -62,6 +62,13 @@ jobs:
   analyze:
     name: Analyze solution
     runs-on: ubuntu-latest
+    # upload-sarif reads this workflow run and writes code scanning results. A repository whose
+    # default token is read-only grants neither, and the upload fails with "Resource not accessible
+    # by integration".
+    permissions:
+      contents: read
+      actions: read
+      security-events: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7.0.1
