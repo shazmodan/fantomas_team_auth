@@ -1,0 +1,127 @@
+name: Release (Team Auth)
+
+# Publishes the `fantomas` dotnet tool built from this fork to this repository owner's GitHub
+# Packages NuGet feed, where the team repos install it from.
+#
+# What gets released is decided by CHANGELOG.md alone: its first versioned heading is the version
+# the package gets (Ionide.KeepAChangelog.Tasks reads it at build time). A run releases that version
+# when it carries the fork's suffix, `-svea.N`, and no `v<version>` tag exists yet. Anything else is
+# skipped, so pushes that do not bump the changelog, and upstream versions merged in, publish nothing.
+#
+# The package id stays `fantomas`: Fantomas.Client, which Ionide and the Visual Studio extension use
+# to find the tool, accepts no other name.
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+# Two runs for the same commit would race to create the same tag.
+concurrency:
+  group: release-svea
+  cancel-in-progress: false
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  FEED_URL: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      # The tag and the GitHub release.
+      contents: write
+      # The push to GitHub Packages.
+      packages: write
+
+    steps:
+    - uses: actions/checkout@v7.0.1
+
+    - name: Decide whether to release
+      id: version
+      shell: bash
+      run: |
+        # The first heading that starts with a digit, which skips an `## [Unreleased]` section the
+        # same way KeepAChangelog does.
+        version=$(grep -m1 -oP '^## \[\K[0-9][^\]]*' CHANGELOG.md)
+        echo "version=$version" >> "$GITHUB_OUTPUT"
+
+        if [[ "$version" != *-svea.* ]]; then
+          echo "::notice::CHANGELOG.md is at $version, which is not a Team Auth version (X.Y.Z-svea.N). Nothing to release."
+          echo "release=false" >> "$GITHUB_OUTPUT"
+        elif git ls-remote --exit-code --tags origin "refs/tags/v$version" > /dev/null; then
+          echo "::notice::v$version is already released."
+          echo "release=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "Releasing $version"
+          echo "release=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Setup .NET
+      if: steps.version.outputs.release == 'true'
+      uses: actions/setup-dotnet@v6
+      with:
+        cache: true
+        cache-dependency-path: Directory.Packages.props
+
+    - name: Init
+      if: steps.version.outputs.release == 'true'
+      run: dotnet fsi build.fsx -p Init
+
+    - name: Build
+      if: steps.version.outputs.release == 'true'
+      run: dotnet build -c Release
+
+    - name: Test
+      if: steps.version.outputs.release == 'true'
+      run: dotnet test -c Release --no-build
+
+    - name: Pack
+      if: steps.version.outputs.release == 'true'
+      shell: bash
+      run: |
+        # Directory.Build.props points RepositoryUrl at upstream. GitHub Packages links a package to
+        # the repository its metadata names, and refuses the push when the token cannot write there,
+        # so name this fork instead. Overridden here rather than in the props to keep merges from
+        # upstream clean.
+        dotnet pack src/Fantomas -c Release --no-build \
+          -p:RepositoryUrl=https://github.com/${{ github.repository }}
+
+        package="artifacts/package/release/fantomas.${{ steps.version.outputs.version }}.nupkg"
+        if [[ ! -f "$package" ]]; then
+          echo "::error::Expected $package, found:"
+          ls artifacts/package/release
+          exit 1
+        fi
+        echo "PACKAGE=$package" >> "$GITHUB_ENV"
+
+    - name: Push to GitHub Packages
+      if: steps.version.outputs.release == 'true'
+      # --skip-duplicate makes a rerun after a failed release step below safe.
+      run: >
+        dotnet nuget push "$PACKAGE"
+        --source "$FEED_URL"
+        --api-key "${{ secrets.GITHUB_TOKEN }}"
+        --skip-duplicate
+
+    - name: Tag and create the GitHub release
+      if: steps.version.outputs.release == 'true'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # The body of this version's changelog section: everything up to the next `## ` heading.
+        awk -v heading="## [$VERSION]" '
+          index($0, heading) == 1 { found = 1; next }
+          found && /^## / { exit }
+          found { print }
+        ' CHANGELOG.md > release-notes.md
+
+        gh release create "v$VERSION" "$PACKAGE" \
+          --target "$GITHUB_SHA" \
+          --title "$VERSION" \
+          --notes-file release-notes.md \
+          --prerelease
