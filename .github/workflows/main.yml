@@ -52,15 +52,6 @@ jobs:
         github_token: ${{ secrets.GITHUB_TOKEN }}
         publish_dir: ./output
 
-  # The online tools build against main, and against the next major's branch for their preview.
-  fantomas-tools:
-    needs: build
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/v9.0')
-    runs-on: ubuntu-latest
-    steps:
-    - name: Trigger the fantomas-tools build
-      run: "curl -H 'Accept: application/vnd.github.everest-preview+json' -H 'Authorization: token ${{secrets.FANTOMAS_TOOLS_TOKEN}}' --request POST --data '{\"event_type\": \"fantomas-commit-on-main\"}' https://api.github.com/repos/fsprojects/fantomas-tools/dispatches"
-
   analyze:
     name: Analyze solution
     runs-on: ubuntu-latest
