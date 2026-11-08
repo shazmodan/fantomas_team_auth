@@ -692,20 +692,28 @@ let ``a configuration that cannot be read at all is an error, and clears the war
 
     (theOnlyWarning warnings).Problems |> should be Empty
 
-/// How long a caller of `countingOverlaps` waits inside for a second one. Only a test that expects no
-/// overlap waits it out in full, once for each of its two requests, and it is the window in which a
-/// gate that let the second request in would be caught.
+/// How long a test that expects two requests to overlap gives the second one to arrive. It returns as
+/// soon as the second is inside, so this is only waited out when the requests really are serialised.
 [<Literal>]
-let private overlapWindowInMs: int = 2_000
+let private overlapExpectedWindowInMs: int = 30_000
+
+/// How long a test that expects no overlap holds each request, which it waits out in full, once for
+/// each of its two requests. It is the window in which a gate that let the second request in would
+/// be caught, and too short a window can only make such a test pass when it should not.
+[<Literal>]
+let private noOverlapWindowInMs: int = 2_000
 
 /// A `ReadConfiguration` that holds each caller inside it until a second caller is inside too, or
-/// `overlapWindowInMs` has passed, and remembers how many were ever inside at once.
+/// `windowInMs` has passed, and remembers how many were ever inside at once.
 ///
 /// It waits for the second caller rather than sleeping for a fixed time. The caller blocks a thread
-/// pool thread while it is inside, and on a runner with two cores the pool can take longer than a
-/// short sleep to start the second request, so a sleep of 100 ms reported no overlap for two files
+/// pool thread while it is inside, and on a loaded CI runner the second request has been seen to
+/// arrive more than two seconds after the first, so a fixed sleep reported no overlap for two files
 /// that do run at the same time.
-let private countingOverlaps () =
+let private countingOverlaps
+    (windowInMs: int)
+    : (string -> EditorConfigFiles.EditorConfigResult option) * (unit -> int)
+    =
     let inFlight = ref 0
     let peak = ref 0
 
@@ -727,16 +735,16 @@ let private countingOverlaps () =
         if now >= 2 then
             bothInside.Set()
 
-        bothInside.Wait overlapWindowInMs |> ignore<bool>
+        bothInside.Wait windowInMs |> ignore<bool>
         System.Threading.Interlocked.Decrement inFlight |> ignore
         None
 
     readConfiguration, (fun () -> peak.Value)
 
 /// Send two format requests without waiting for the first, and report how many of them were ever
-/// inside `ReadConfiguration` at the same time.
-let private overlapOf (firstFile: string) (secondFile: string) : int =
-    let readConfiguration, peak = countingOverlaps ()
+/// inside `ReadConfiguration` at the same time, holding each for at most `windowInMs`.
+let private overlapOf (windowInMs: int) (firstFile: string) (secondFile: string) : int =
+    let readConfiguration, peak = countingOverlaps windowInMs
 
     let environment =
         daemonEnvironment (new System.IO.Abstractions.FileSystem()) readConfiguration
@@ -765,7 +773,9 @@ let private overlapOf (firstFile: string) (secondFile: string) : int =
 [<Test>]
 let ``two requests for the same file do not overlap`` () =
     use codeFile = new TemporaryFileCodeSample(sourceCode)
-    overlapOf codeFile.Filename codeFile.Filename |> should equal 1
+
+    overlapOf noOverlapWindowInMs codeFile.Filename codeFile.Filename
+    |> should equal 1
 
 // One file reached through two spellings is still one file on Windows and on a default macOS
 // volume, and nothing canonicalises the path on the way in, so the gates fold case.
@@ -779,14 +789,16 @@ let ``two spellings of one file share a gate`` () =
             (System.IO.Path.GetFileName codeFile.Filename).ToUpperInvariant()
         )
 
-    overlapOf codeFile.Filename shouted |> should equal 1
+    overlapOf noOverlapWindowInMs codeFile.Filename shouted |> should equal 1
 
 // Only the same file waits. Formatting a repository is the whole point of having several in flight.
 [<Test>]
 let ``two requests for different files still run at the same time`` () =
     use firstFile = new TemporaryFileCodeSample(sourceCode)
     use secondFile = new TemporaryFileCodeSample(sourceCode)
-    overlapOf firstFile.Filename secondFile.Filename |> should equal 2
+
+    overlapOf overlapExpectedWindowInMs firstFile.Filename secondFile.Filename
+    |> should equal 2
 
 [<Test>]
 let ``format selection reports configuration warnings too`` () =
