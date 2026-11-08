@@ -104,7 +104,7 @@ let ``nested exceedsMultiline expression should bubble up to parent check`` () =
     let config =
         { FormatConfig.Default with
             MaxLineLength = 50
-            SpaceAroundDelimiter = false
+            SpaceAroundDelimiter = SpaceAroundDelimiterStyle.Never
         }
 
     let initialContext = { Context.Default with Config = config }

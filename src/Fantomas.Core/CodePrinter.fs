@@ -1266,7 +1266,32 @@ let genChain (node: ExprChain) : Context -> Context =
     // chain together (with wrapped arguments) and the leading-dot pipeline.
     expressionFitsOnRestOfLine genChainKeptTogether long
 
-let genExpr (e: Expr) =
+/// Every expression is written through here, so that padding an alignment setting put on it
+/// (`Context.Padding`) goes before and after it.
+let genExpr (e: Expr) (ctx: Context) : Context =
+    if ctx.Padding.IsEmpty then
+        genExprCore e ctx
+    else
+
+    let key: PaddingKey = paddingKey (Expr.Node e).Range
+
+    match Map.tryFind key ctx.Padding with
+    | None -> genExprCore e ctx
+    | Some(before, after) ->
+
+    let padding: Map<PaddingKey, int * int> = ctx.Padding
+    // A node of the same range inside this one, such as the text of an identifier, is not padded again.
+    let ctx: Context =
+        writePadding
+            before
+            { ctx with
+                Padding = Map.remove key padding
+            }
+
+    let ctx: Context = genExprCore e ctx
+    writePadding after { ctx with Padding = padding }
+
+let genExprCore (e: Expr) : Context -> Context =
     match e with
     | Expr.Lazy node ->
         let genInfixExpr (ctx: Context) =
@@ -1417,10 +1442,10 @@ let genExpr (e: Expr) =
                     let openBraceLength = node.OpeningBrace.Text.Length
 
                     ctx.Column
-                    + (if ctx.Config.SpaceAroundDelimiter then
-                           openBraceLength + 1
-                       else
-                           openBraceLength)
+                    + if ctx.Config.SpaceAroundDelimiter <> SpaceAroundDelimiterStyle.Never then
+                          openBraceLength + 1
+                      else
+                          openBraceLength
 
                 (genSingleTextNodeSuffixDelimiter node.OpeningBrace
                  +> atCurrentColumn genInheritInfo
@@ -1609,6 +1634,12 @@ let genExpr (e: Expr) =
             )
             |> colWithNlnWhenItemIsMultilineUsingConfig
             |> genNode node
+
+        let genStatements (ctx: Context) : Context =
+            if not ctx.Config.AlignRows then
+                genStatements ctx
+            else
+                withPadding (alignedBindingPadding node.Statements ctx) genStatements ctx
 
         match node.Statements with
         | [ ComputationExpressionStatement.BindingStatement bindingNode
@@ -2583,10 +2614,10 @@ let genMultilineRecord (node: ExprRecordNode) (ctx: Context) =
 
     let targetColumn =
         expressionStartColumn
-        + (if ctx.Config.SpaceAroundDelimiter then
-               openBraceLength + 1
-           else
-               openBraceLength)
+        + if ctx.Config.SpaceAroundDelimiter <> SpaceAroundDelimiterStyle.Never then
+              openBraceLength + 1
+          else
+              openBraceLength
 
     let genMultilineAlignBrackets =
         let fieldsExpr = genMultilineRecordFieldsExpr genRecordFieldNameAligned node
@@ -2718,9 +2749,9 @@ let genArrayOrList (preferMultilineCramped: bool) (node: ExprArrayOrListNode) =
     else
         let smallExpression =
             genSingleTextNode node.Opening
-            +> addSpaceIfSpaceAroundDelimiter
+            +> addSpaceIfSpaceAroundListDelimiter
             +> col sepSemi node.Elements genExpr
-            +> addSpaceIfSpaceAroundDelimiter
+            +> addSpaceIfSpaceAroundListDelimiter
             +> genSingleTextNode node.Closing
 
         let multilineExpression =
@@ -2734,7 +2765,7 @@ let genArrayOrList (preferMultilineCramped: bool) (node: ExprArrayOrListNode) =
                 +> genSingleTextNode node.Closing
 
             let genMultiLineArrayOrListCramped =
-                genSingleTextNodeSuffixDelimiter node.Opening
+                genSingleTextNodeWithSpaceSuffix addSpaceIfSpaceAroundListDelimiter node.Opening
                 +> atCurrentColumnIndent (
                     sepNlnWhenWriteBeforeNewlineNotEmpty
                     +> col sepNlnUnlessLastEventIsNewline node.Elements genExpr
@@ -2742,7 +2773,7 @@ let genArrayOrList (preferMultilineCramped: bool) (node: ExprArrayOrListNode) =
                         +> (fun ctx ->
                             let isFixed = lastWriteEventIsNewline ctx
 
-                            (onlyIfNot isFixed sepSpace
+                            (onlyIfNot isFixed addSpaceIfSpaceAroundListDelimiter
                              +> genSingleTextNodeText node.Closing
                              +> leaveNode node.Closing)
                                 ctx
@@ -2936,16 +2967,608 @@ let genAppSingleParenArgExpr (addSpace: Context -> Context) (node: ExprAppSingle
 
     expressionFitsOnRestOfLine short long |> genNode node
 
-let genClauses (clauses: MatchClauseNode list) =
-    let lastIndex = clauses.Length - 1
+// =============================================================================
+// Rows laid out as a table: fsharp_align_rows, fsharp_align_match_arrows and
+// fsharp_hanging_infix_operators. Each works out padding for the nodes of a few rows
+// (`Context.Padding`), which `genExpr` and `genPaddingBefore` write while the rows are printed
+// as they always are.
+// =============================================================================
 
-    coli
-        sepNlnUnlessLastEventIsNewline
-        clauses
-        (fun idx clause ->
-            let isLastItem = lastIndex = idx
-            genClause isLastItem clause
+/// The padding of one aligned run of rows: how wide its cells come out, and the spaces before and
+/// after each node that get them there.
+type AlignedCells =
+    {
+        Width: int
+        Padding: (PaddingKey * int * int) list
+    }
+
+let mergePadding (left: Map<PaddingKey, int * int>) (right: Map<PaddingKey, int * int>) : Map<PaddingKey, int * int> =
+    (left, right)
+    ||> Map.fold (fun (merged: Map<PaddingKey, int * int>) key (before, after) ->
+        match Map.tryFind key merged with
+        | Some(b, a) -> Map.add key (b + before, a + after) merged
+        | None -> Map.add key (before, after) merged
+    )
+
+/// Print `f` with `padding` added to the padding already in place, and drop it again afterwards.
+let withPadding (padding: Map<PaddingKey, int * int>) (f: Context -> Context) (ctx: Context) : Context =
+    if padding.IsEmpty then
+        f ctx
+    else
+
+    let outer: Map<PaddingKey, int * int> = ctx.Padding
+
+    let ctx: Context =
+        f
+            { ctx with
+                Padding = mergePadding outer padding
+            }
+
+    { ctx with Padding = outer }
+
+/// The spaces put before a node that is not an expression, such as the `->` of a match clause.
+let genPaddingBefore (node: Node) (ctx: Context) : Context =
+    if ctx.Padding.IsEmpty then
+        ctx
+    else
+
+    match Map.tryFind (paddingKey node.Range) ctx.Padding with
+    | Some(before, _) -> writePadding before ctx
+    | None -> ctx
+
+/// How wide `f` writes from the current column, or None when it does not stay on one line.
+let measureOneLine (f: Context -> Context) (ctx: Context) : int option =
+    let after: Context = ctx.WithDummy f
+
+    if after.WriterModel.LineCount <> ctx.WriterModel.LineCount then
+        None
+    else
+        Some(after.Column - ctx.Column)
+
+/// How wide an expression is on one line, without any padding, or None when it is not one line.
+let measureExprOneLine (e: Expr) (ctx: Context) : int option =
+    measureOneLine (genExpr e) { ctx with Padding = Map.empty }
+
+/// Whether `f` stays on one line, with the page width it is printed at.
+let staysOnOneLine (f: Context -> Context) (ctx: Context) : bool =
+    let after: Context = ctx.WithDummy(f, true)
+    after.WriterModel.LineCount = ctx.WriterModel.LineCount
+
+let functionNameText (e: Expr) : string option =
+    match e with
+    | Expr.Ident node -> Some node.Text
+    | Expr.OptVar node ->
+        node.Identifier.Content
+        |> List.map (
+            function
+            | IdentifierOrDot.Ident ident -> ident.Text
+            | IdentifierOrDot.KnownDot dot -> dot.Text
+            | IdentifierOrDot.UnknownDot -> "."
         )
+        |> String.concat ""
+        |> Some
+    | _ -> None
+
+/// What two rows must share for their children to line up column by column, and those children.
+/// The text between the children, the brackets, separators, operators and function names, is part
+/// of the shape, so it is as wide in every row.
+let rowShape (e: Expr) : (string * Expr list) option =
+    match e with
+    | Expr.Paren node -> Some("()", [ node.Expr ])
+    | Expr.Tuple node ->
+        let items: Expr list =
+            node.Items
+            |> List.choose (
+                function
+                | Choice1Of2 item -> Some item
+                | Choice2Of2 _ -> None
+            )
+
+        Some($"tuple %d{items.Length}", items)
+    | Expr.ArrayOrList node when not node.Elements.IsEmpty ->
+        Some($"%s{node.Opening.Text} %d{node.Elements.Length}", node.Elements)
+    | Expr.App node ->
+        functionNameText node.FunctionExpr
+        |> Option.map (fun name -> $"app %s{name} %d{node.Arguments.Length}", node.Arguments)
+    | Expr.AppSingleParenArg node ->
+        functionNameText node.FunctionExpr
+        |> Option.map (fun name -> $"app1 %s{name}", [ node.ArgExpr ])
+    | Expr.InfixApp node -> Some($"infix %s{node.Operator.Text}", [ node.LeftHandSide; node.RightHandSide ])
+    | Expr.SameInfixApps node ->
+        let operators: string list =
+            node.SubsequentExpressions |> List.map (fun (operator, _) -> operator.Text)
+
+        Some($"""same %s{String.concat " " operators}""", node.LeadingExpr :: List.map snd node.SubsequentExpressions)
+    | _ -> None
+
+/// A cell that may be centred in a wider column: a name, a number, a character, `A[i]`. A string
+/// is not, nor is anything with structure of its own.
+let isAtomCell (e: Expr) : bool =
+    match e with
+    | Expr.Ident _
+    | Expr.OptVar _
+    | Expr.Null _
+    | Expr.Constant(Constant.Unit _) -> true
+    | Expr.Constant(Constant.FromText node) ->
+        not (
+            node.Text.StartsWith("\"", StringComparison.Ordinal)
+            || node.Text.StartsWith("@", StringComparison.Ordinal)
+        )
+    | Expr.IndexWithoutDot node -> isAtomCell node.Identifier && isAtomCell node.Index
+    | _ -> false
+
+/// Line up `items`, the expressions at one place in each row of a run. None when they do not line
+/// up. At the root of a row the shapes must agree; below it a row may lack the right-hand side of
+/// an infix operator the others have, and that part is left blank:
+///
+///     let a6 = (quintuplet &&& 0x00000003E0L) >>>  5 |> int
+///     let a7 = (quintuplet &&& 0x000000001FL)        |> int    the blank is `a7`'s `>>> NN`
+let alignCells (ctx: Context) (isRoot: bool) (items: Expr list) : AlignedCells option =
+    let widths: int option list =
+        items |> List.map (fun item -> measureExprOneLine item ctx)
+
+    if List.exists Option.isNone widths then
+        None
+    else
+
+    let widths: int list = List.choose id widths
+    let shapes: (string * Expr list) option list = List.map rowShape items
+
+    let sameShape: bool =
+        match shapes with
+        | Some(shape, _) :: rest ->
+            rest
+            |> List.forall (
+                function
+                | Some(other, _) -> other = shape
+                | None -> false
+            )
+        | _ -> false
+
+    if sameShape then
+        let children: Expr list list = shapes |> List.choose (Option.map snd)
+
+        let columns: AlignedCells option list =
+            children |> List.transpose |> List.map (alignCells ctx false)
+
+        if List.exists Option.isNone columns then
+            None
+        else
+
+        let columns: AlignedCells list = List.choose id columns
+
+        let childWidths: int list =
+            List.head children |> List.choose (fun child -> measureExprOneLine child ctx)
+
+        let textBetweenChildren: int = List.head widths - List.sum childWidths
+
+        Some
+            {
+                Width = textBetweenChildren + List.sumBy (fun column -> column.Width) columns
+                Padding = List.collect (fun column -> column.Padding) columns
+            }
+    elif isRoot then
+        None
+    else
+
+    match alignWithBlankRightHandSide ctx items with
+    | Some cells -> Some cells
+    | None ->
+
+    let widest: int = List.max widths
+
+    if List.forall (fun width -> width = widest) widths then
+        Some { Width = widest; Padding = [] }
+    elif List.forall isAtomCell items then
+        let padding: (PaddingKey * int * int) list =
+            List.zip items widths
+            |> List.choose (fun (item, width) ->
+                let extra: int = widest - width
+
+                if extra = 0 then
+                    None
+                else
+                    // centred, the odd space on the left:  " x1"  in the column of `0uy`
+                    Some(paddingKey (Expr.Node item).Range, (extra + 1) / 2, extra / 2)
+            )
+
+        Some { Width = widest; Padding = padding }
+    else
+        None
+
+/// Some of `items` are `left op right` and the rest line up with their `left`: those get a blank
+/// as wide as ` op right` after them.
+let alignWithBlankRightHandSide (ctx: Context) (items: Expr list) : AlignedCells option =
+    let operators: string list =
+        items
+        |> List.choose (
+            function
+            | Expr.InfixApp node -> Some node.Operator.Text
+            | _ -> None
+        )
+        |> List.countBy id
+        |> List.sortByDescending snd
+        |> List.map fst
+
+    operators
+    |> List.tryPick (fun operator ->
+        let complete: ExprInfixAppNode list =
+            items
+            |> List.choose (
+                function
+                | Expr.InfixApp node when node.Operator.Text = operator -> Some node
+                | _ -> None
+            )
+
+        let partial: Expr list =
+            items
+            |> List.filter (
+                function
+                | Expr.InfixApp node -> node.Operator.Text <> operator
+                | _ -> true
+            )
+
+        match complete, partial with
+        | [], _
+        | _, [] -> None
+        | first :: _, _ ->
+
+        let left: AlignedCells option =
+            alignCells ctx false (List.map (fun (node: ExprInfixAppNode) -> node.LeftHandSide) complete @ partial)
+
+        let right: AlignedCells option =
+            alignCells ctx false (List.map (fun (node: ExprInfixAppNode) -> node.RightHandSide) complete)
+
+        let operatorWidth: int option =
+            match
+                measureExprOneLine (Expr.InfixApp first) ctx,
+                measureExprOneLine first.LeftHandSide ctx,
+                measureExprOneLine first.RightHandSide ctx
+            with
+            | Some whole, Some lhs, Some rhs -> Some(whole - lhs - rhs)
+            | _ -> None
+
+        match left, right, operatorWidth with
+        | Some left, Some right, Some operatorWidth ->
+            let blank: int = operatorWidth + right.Width
+
+            Some
+                {
+                    Width = left.Width + operatorWidth + right.Width
+                    Padding =
+                        left.Padding
+                        @ right.Padding
+                        @ (partial |> List.map (fun item -> paddingKey (Expr.Node item).Range, 0, blank))
+                }
+        | _ -> None
+    )
+
+let rec rowTokens (node: Node) : SingleTextNode seq =
+    seq {
+        match node with
+        | :? SingleTextNode as token -> yield token
+        | _ ->
+            for child in node.Children do
+                yield! rowTokens child
+    }
+
+let closingTokens: Set<string> = set [ ")"; "]"; "|]"; "}"; "|}" ]
+
+/// The padding of a run, keyed by node. Spaces after the last cell of a row line nothing up, so a
+/// row does not get them:
+///
+///     ||| (int64 x3 <<<  8)
+///     ||| (int64 x4)           no blank where `x4` lacks ` <<< NN`
+let paddingOfRun (rows: Expr list) (cells: AlignedCells) : Map<PaddingKey, int * int> =
+    let lastCellEnds: (Fantomas.FCS.Text.range * (int * int)) list =
+        rows
+        |> List.map (fun row ->
+            let lastEnd: int * int =
+                rowTokens (Expr.Node row)
+                |> Seq.choose (fun token ->
+                    if closingTokens.Contains token.Text then
+                        None
+                    else
+                        Some(token.Range.EndLine, token.Range.EndColumn)
+                )
+                |> Seq.max
+
+            (Expr.Node row).Range, lastEnd
+        )
+
+    cells.Padding
+    |> List.fold
+        (fun (padding: Map<PaddingKey, int * int>) (key, before, after) ->
+            let startLine, startColumn, endLine, endColumn = key
+
+            let endsTheRow: bool =
+                lastCellEnds
+                |> List.exists (fun (range, lastEnd) ->
+                    (range.StartLine, range.StartColumn) <= (startLine, startColumn)
+                    && (endLine, endColumn) <= (range.EndLine, range.EndColumn)
+                    && (endLine, endColumn) >= lastEnd
+                )
+
+            let after: int = if endsTheRow then 0 else after
+            mergePadding padding (Map.ofList [ key, (before, after) ])
+        )
+        Map.empty
+
+/// Split consecutive rows into the longest runs that line up, and pad every run of two or more.
+let alignRuns (ctx: Context) (rows: Expr list) : Map<PaddingKey, int * int> =
+    let rec extend
+        (run: Expr list)
+        (cells: AlignedCells option)
+        (remaining: Expr list)
+        : Expr list * AlignedCells option * Expr list
+        =
+        match remaining with
+        | [] -> run, cells, remaining
+        | next :: rest ->
+
+        match alignCells ctx true (run @ [ next ]) with
+        | Some aligned -> extend (run @ [ next ]) (Some aligned) rest
+        | None -> run, cells, remaining
+
+    let rec go (padding: Map<PaddingKey, int * int>) (rows: Expr list) : Map<PaddingKey, int * int> =
+        match rows with
+        | []
+        | [ _ ] -> padding
+        | first :: rest ->
+
+        match extend [ first ] None rest with
+        | _, None, _ -> go padding rest
+        | run, Some cells, remaining -> go (mergePadding padding (paddingOfRun run cells)) remaining
+
+    go Map.empty rows
+
+/// Split `items` into runs of consecutive items that `isRow` accepts, a new run starting wherever
+/// `startsRun` says one does.
+let consecutiveRuns (isRow: 'T -> bool) (startsRun: 'T -> 'T -> bool) (items: 'T list) : 'T list list =
+    let close (run: 'T list) (runs: 'T list list) : 'T list list =
+        match run with
+        | [] -> runs
+        | _ -> List.rev run :: runs
+
+    let rec go (run: 'T list) (runs: 'T list list) (items: 'T list) : 'T list list =
+        match items with
+        | [] -> close run runs |> List.rev
+        | item :: rest when not (isRow item) -> go [] (close run runs) rest
+        | item :: rest ->
+
+        match run with
+        | previous :: _ when startsRun previous item -> go [ item ] (close run runs) rest
+        | _ -> go (item :: run) runs rest
+
+    go [] [] items
+
+/// The padding of the one-line clauses of a match: their bodies as rows (fsharp_align_rows), their
+/// `->` lined up (fsharp_align_match_arrows). A clause with trivia before it, or with a guard,
+/// starts a new run.
+let alignedClausePadding (clauses: MatchClauseNode list) (ctx: Context) : Map<PaddingKey, int * int> =
+    let lastIndex: int = clauses.Length - 1
+
+    let genIndexedClause (idx: int, clause: MatchClauseNode) : Context -> Context = genClause (idx = lastIndex) clause
+
+    let isOneLine (padding: Map<PaddingKey, int * int>) (clause: int * MatchClauseNode) : bool =
+        staysOnOneLine (genIndexedClause clause) { ctx with Padding = padding }
+
+    let isRow (_: int, clause: MatchClauseNode) : bool =
+        clause.WhenExpr.IsNone && isOneLine Map.empty (0, clause)
+
+    let startsRun (_: int * MatchClauseNode) (_: int, clause: MatchClauseNode) : bool = clause.HasContentBefore
+
+    clauses
+    |> List.indexed
+    |> consecutiveRuns isRow startsRun
+    |> List.map (fun run ->
+        if run.Length < 2 then
+            Map.empty
+        else
+
+        let bodyPadding: Map<PaddingKey, int * int> =
+            if ctx.Config.AlignRows then
+                alignRuns ctx (run |> List.map (fun (_, clause) -> clause.BodyExpr))
+            else
+                Map.empty
+
+        let arrowPadding: Map<PaddingKey, int * int> =
+            if not ctx.Config.AlignMatchArrows then
+                Map.empty
+            else
+
+            let widths: (MatchClauseNode * int) list =
+                run
+                |> List.map (fun (_, clause) ->
+                    clause, measureOneLine (genPatInClause clause.Pattern) ctx |> Option.defaultValue 0
+                )
+
+            let widest: int = widths |> List.map snd |> List.max
+
+            widths
+            |> List.map (fun (clause, width) -> paddingKey clause.Arrow.Range, (widest - width, 0))
+            |> Map.ofList
+
+        let both: Map<PaddingKey, int * int> = mergePadding bodyPadding arrowPadding
+
+        if List.forall (isOneLine both) run then
+            both
+        elif List.forall (isOneLine arrowPadding) run then
+            arrowPadding
+        else
+            Map.empty
+    )
+    |> List.fold mergePadding Map.empty
+
+/// The padding of consecutive one-line `let`s whose right-hand sides line up (fsharp_align_rows).
+/// Only bindings of a plain name, all as wide, so that every `=` is already on one column.
+let alignedBindingPadding
+    (statements: ComputationExpressionStatement list)
+    (ctx: Context)
+    : Map<PaddingKey, int * int>
+    =
+    let header (binding: BindingNode) : (string list * int) option =
+        match binding.FunctionName with
+        | Choice1Of2 name when
+            binding.Parameters.IsEmpty
+            && binding.Attributes.IsNone
+            && binding.XmlDoc.IsNone
+            && binding.ReturnType.IsNone
+            && binding.GenericTypeParameters.IsNone
+            && binding.Inline.IsNone
+            && binding.Accessibility.IsNone
+            && binding.In.IsNone
+            && not binding.IsMutable
+            ->
+            measureOneLine (genIdentListNode name) ctx
+            |> Option.map (fun width -> binding.LeadingKeyword.Content |> List.map (fun keyword -> keyword.Text), width)
+        | _ -> None
+
+    let bindings: BindingNode option list =
+        statements
+        |> List.map (
+            function
+            | ComputationExpressionStatement.BindingStatement binding -> Some binding
+            | ComputationExpressionStatement.OtherStatement _ -> None
+        )
+
+    let isRow (binding: BindingNode option) : bool =
+        match binding with
+        | Some binding -> (header binding).IsSome && staysOnOneLine (genBinding binding) ctx
+        | None -> false
+
+    let startsRun (previous: BindingNode option) (binding: BindingNode option) : bool =
+        match previous, binding with
+        | Some previous, Some binding -> binding.HasContentBefore || header previous <> header binding
+        | _ -> true
+
+    bindings
+    |> consecutiveRuns isRow startsRun
+    |> List.map (fun run ->
+        if run.Length < 2 then
+            Map.empty
+        else
+
+        let run: BindingNode list = List.choose id run
+
+        let padding: Map<PaddingKey, int * int> =
+            alignRuns ctx (run |> List.map (fun binding -> binding.Expr))
+
+        if
+            run
+            |> List.forall (fun binding -> staysOnOneLine (genBinding binding) { ctx with Padding = padding })
+        then
+            padding
+        else
+            Map.empty
+    )
+    |> List.fold mergePadding Map.empty
+
+/// Operators a line of F# cannot start with in a hanging chain: the compiler rejects the result
+/// (FS0010). Checked with the SDK compiler one operator at a time.
+let operatorsThatCannotHang: Set<string> =
+    set [ "="; "<"; ">"; "%"; "%%"; "^"; ":="; "?" ]
+
+/// fsharp_hanging_infix_operators: a chain of one operator that is too long for one line keeps its
+/// first operand on the line of the `=`, and every further line starts with the operator one column
+/// after the `=`, so the operands line up:
+///
+///     let quintuplet =    (int64 x0 <<< 32)
+///                     ||| (int64 x1 <<< 24)
+///
+/// `ctx` is right after the `= ` of the binding. None leaves the chain to the usual layout.
+let tryGenHangingChain (e: Expr) (ctx: Context) : (Context -> Context) option =
+    if
+        not ctx.Config.HangingInfixOperators
+        || hasWriteBeforeNewlineContent ctx
+        || (Expr.Node e).HasContentBefore
+    then
+        None
+    else
+
+    let chain: (Expr * (SingleTextNode * Expr) list) option =
+        match e with
+        | Expr.SameInfixApps node -> Some(node.LeadingExpr, node.SubsequentExpressions)
+        | Expr.InfixApp node -> Some(node.LeftHandSide, [ node.Operator, node.RightHandSide ])
+        | _ -> None
+
+    match chain with
+    | None
+    | Some(_, []) -> None
+    | Some(first, ((firstOperator, _) :: _ as rest)) ->
+
+    let operator: string = firstOperator.Text
+    let operands: Expr list = first :: List.map snd rest
+
+    let sameOperator: bool =
+        rest
+        |> List.forall (fun (node, _) -> node.Text = operator && not node.HasContentBefore && not node.HasContentAfter)
+
+    let tooWideForOneLine: bool =
+        match measureExprOneLine e ctx with
+        | Some width -> width > ctx.Config.MaxInfixOperatorExpression
+        | None -> true
+
+    if
+        not sameOperator
+        || operatorsThatCannotHang.Contains operator
+        || not tooWideForOneLine
+    then
+        None
+    else
+
+    let padding: Map<PaddingKey, int * int> =
+        if ctx.Config.AlignRows then
+            alignRuns ctx operands
+        else
+            Map.empty
+
+    let paddedWidths: int option list =
+        operands
+        |> List.map (fun operand -> measureOneLine (genExpr operand) { ctx with Padding = padding })
+
+    if List.exists Option.isNone paddedWidths then
+        None
+    else
+
+    let operatorColumn: int = ctx.Column - 1
+    let operandColumn: int = operatorColumn + operator.Length + 1
+    let widest: int = paddedWidths |> List.choose id |> List.max
+
+    if operandColumn + widest > ctx.Config.MaxLineLength then
+        None
+    else
+
+    let genChain: Context -> Context =
+        writePadding operator.Length
+        +> genExpr first
+        +> atIndentLevel
+            true
+            operatorColumn
+            (col
+                sepNone
+                rest
+                (fun (operatorNode, operand) -> sepNln +> genSingleTextNode operatorNode +> sepSpace +> genExpr operand))
+
+    Some(withPadding padding (genNode (Expr.Node e) genChain))
+
+let genClauses (clauses: MatchClauseNode list) (ctx: Context) : Context =
+    let lastIndex: int = clauses.Length - 1
+
+    let genAll: Context -> Context =
+        coli
+            sepNlnUnlessLastEventIsNewline
+            clauses
+            (fun idx clause ->
+                let isLastItem: bool = lastIndex = idx
+                genClause isLastItem clause
+            )
+
+    if clauses.Length < 2 || not (ctx.Config.AlignRows || ctx.Config.AlignMatchArrows) then
+        genAll ctx
+    else
+
+    withPadding (alignedClausePadding clauses ctx) genAll ctx
 
 let genClause (isLastItem: bool) (node: MatchClauseNode) =
     let genBar =
@@ -3013,7 +3636,7 @@ let genClause (isLastItem: bool) (node: MatchClauseNode) =
 
     let genAfterPattern: Context -> Context =
         match node.WhenExpr with
-        | None -> sepSpace +> genArrowAndBody false
+        | None -> genPaddingBefore node.Arrow +> sepSpace +> genArrowAndBody false
         | Some(whenNode, guard) when whenNode.HasContentBefore ->
             // | a
             //     // trivia
@@ -4173,7 +4796,14 @@ let genBinding (b: BindingNode) (ctx: Context) : Context =
             +> (fun ctx ->
                 let prefix = afterLetKeyword +> sepSpace +> genValueName +> genReturnType
                 let short = prefix +> genExpr b.Expr
-                let long = prefix +> indentSepNlnUnindentUnlessStroustrup genExpr b.Expr
+
+                let long: Context -> Context =
+                    prefix
+                    +> fun ctx ->
+                        match tryGenHangingChain b.Expr ctx with
+                        | Some genHangingChain -> genHangingChain ctx
+                        | None -> indentSepNlnUnindentUnlessStroustrup genExpr b.Expr ctx
+
                 isShortExpression ctx.Config.MaxValueBindingWidth short long ctx
             )
 

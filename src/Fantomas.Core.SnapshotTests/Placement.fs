@@ -82,8 +82,12 @@ let private folderValues (key: string) (settingType: System.Type) : string list 
     elif FSharpType.IsUnion settingType then
         FSharpType.GetUnionCases settingType
         |> Array.choose (fun (case: UnionCaseInfo) ->
+            // Spelled as Fantomas writes the value back, which is not always the case's name:
+            // `SpaceAroundDelimiterStyle.Always` is `true`.
             let value: string =
-                Regex.Replace(case.Name, "(?<=[a-z])(?=[A-Z])", "_").ToLowerInvariant()
+                match FSharpValue.MakeUnion(case, [||], true) with
+                | :? SpaceAroundDelimiterStyle as style -> SpaceAroundDelimiterStyle.ToConfigString style
+                | _ -> Regex.Replace(case.Name, "(?<=[a-z])(?=[A-Z])", "_").ToLowerInvariant()
 
             if isValue key value then Some value else None
         )

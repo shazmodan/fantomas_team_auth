@@ -1,0 +1,11 @@
+(*---
+# Clause bodies calling the same function with as many arguments line up cell by cell. A body of
+# another shape, the first and the last here, is not part of the table.
+fsharp_align_rows = true
+---*)
+let rec loop acc =
+    function
+    | x0 :: x1 :: x2 :: tail -> loop (toList 3 (x0, x1, x2) @ acc) tail
+    | x0 :: x1 :: [] -> toList 2 (x0, x1, 0uy) @ acc
+    | x0 :: [] -> toList 1 (x0, 0uy, 0uy) @ acc
+    | [] -> acc

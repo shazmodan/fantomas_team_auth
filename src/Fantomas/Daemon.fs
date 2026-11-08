@@ -383,6 +383,8 @@ type FantomasDaemon(sender: Stream, reader: Stream, environment: DaemonEnvironme
                     | :? EndOfLineStyle as e -> Some("endOfLineStyle", EndOfLineStyle.ToConfigString e)
                     | :? MultilineBracketStyle as m ->
                         Some("multilineBracketStyle", MultilineBracketStyle.ToConfigString m)
+                    | :? SpaceAroundDelimiterStyle as s ->
+                        Some("spaceAroundDelimiterStyle", SpaceAroundDelimiterStyle.ToConfigString s)
                     | _ -> None
 
                 type'
@@ -418,6 +420,13 @@ type FantomasDaemon(sender: Stream, reader: Stream, environment: DaemonEnvironme
                             MultilineBracketStyle.ToConfigString Aligned
                             MultilineBracketStyle.ToConfigString Cramped
                             MultilineBracketStyle.ToConfigString Stroustrup
+                        ]
+                    "spaceAroundDelimiterStyle",
+                    jsonStringArray
+                        [
+                            SpaceAroundDelimiterStyle.ToConfigString SpaceAroundDelimiterStyle.Always
+                            SpaceAroundDelimiterStyle.ToConfigString SpaceAroundDelimiterStyle.Never
+                            SpaceAroundDelimiterStyle.ToConfigString SpaceAroundDelimiterStyle.PatternsOnly
                         ]
                 ]
 

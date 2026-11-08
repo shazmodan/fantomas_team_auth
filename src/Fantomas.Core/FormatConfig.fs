@@ -44,6 +44,30 @@ type MultilineBracketStyle =
         | "stroustrup" -> Some Stroustrup
         | _ -> None
 
+/// Where `fsharp_space_around_delimiter` puts a space inside a pair of brackets or braces.
+[<RequireQualifiedAccess; Struct>]
+type SpaceAroundDelimiterStyle =
+    /// `true`: inside every pair.
+    | Always
+    /// `false`: inside none.
+    | Never
+    /// `patterns_only`: a list or array expression gets none, `[x1; x0]`, while a list or array
+    /// pattern, `| [ a; b ] ->`, and every other pair of delimiters keep theirs.
+    | PatternsOnly
+
+    static member ToConfigString(cfg: SpaceAroundDelimiterStyle) =
+        match cfg with
+        | SpaceAroundDelimiterStyle.Always -> "true"
+        | SpaceAroundDelimiterStyle.Never -> "false"
+        | SpaceAroundDelimiterStyle.PatternsOnly -> "patterns_only"
+
+    static member OfConfigString(cfgString: string) =
+        match cfgString with
+        | "true" -> Some SpaceAroundDelimiterStyle.Always
+        | "false" -> Some SpaceAroundDelimiterStyle.Never
+        | "patterns_only" -> Some SpaceAroundDelimiterStyle.PatternsOnly
+        | _ -> None
+
 [<RequireQualifiedAccess; Struct>]
 type EndOfLineStyle =
     | LF
@@ -136,7 +160,8 @@ type FormatConfig =
 
         [<Category("Spacing")>]
         [<DisplayName("Around delimiter")>]
-        SpaceAroundDelimiter: bool
+        [<Description("Add a space inside brackets and braces: true, false, or patterns_only, which leaves it out of list and array expressions and keeps it in list and array patterns and every other pair.")>]
+        SpaceAroundDelimiter: SpaceAroundDelimiterStyle
 
         [<Category("Boundaries")>]
         [<DisplayName("Maximum if-then width")>]
@@ -227,6 +252,21 @@ type FormatConfig =
         [<Category("Convention")>]
         [<DisplayName("Applies the Stroustrup style to the final (two) array or list argument(s) in a function application")>]
         ExperimentalElmish: bool
+
+        [<Category("Convention")>]
+        [<DisplayName("Line up rows that have the same shape")>]
+        [<Description("Consecutive one-line match clauses, consecutive one-line let bindings and the operands of a hanging chain whose expressions have the same shape are laid out as a table: a narrower cell is padded to the widest in its column, centred, with the odd space on the left.")>]
+        AlignRows: bool
+
+        [<Category("Convention")>]
+        [<DisplayName("Line up the arrows of one-line match clauses")>]
+        [<Description("Consecutive one-line match clauses pad their patterns so that their arrows line up.")>]
+        AlignMatchArrows: bool
+
+        [<Category("Convention")>]
+        [<DisplayName("Hang the operators of a long chain after the equals sign")>]
+        [<Description("A chain of one operator that does not fit on one line keeps its first operand on the line of the binding's equals sign, and every further line starts with the operator one column after the equals sign, so the operands line up.")>]
+        HangingInfixOperators: bool
     }
 
     member x.IsStroustrupStyle = x.MultilineBracketStyle = Stroustrup
@@ -246,7 +286,7 @@ type FormatConfig =
             SpaceAfterComma = true
             SpaceBeforeSemicolon = false
             SpaceAfterSemicolon = true
-            SpaceAroundDelimiter = true
+            SpaceAroundDelimiter = SpaceAroundDelimiterStyle.Always
             MaxIfThenShortWidth = 0
             MaxIfThenElseShortWidth = 60
             MaxInfixOperatorExpression = 80
@@ -269,4 +309,7 @@ type FormatConfig =
             KeepMaxNumberOfBlankLines = 100
             NewlineBeforeMultilineComputationExpression = true
             ExperimentalElmish = false
+            AlignRows = false
+            AlignMatchArrows = false
+            HangingInfixOperators = false
         }

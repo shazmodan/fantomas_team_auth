@@ -419,11 +419,15 @@ fsharp_space_after_semicolon = false
 <copy-to-clipboard text="fsharp_space_around_delimiter = false"></copy-to-clipboard>
 
 Adds a space around delimiters like `[`,`[|`,{`.
+
+Takes `true`, `false` or `patterns_only`. `patterns_only` leaves the space out of a list or array
+expression and keeps it in a list or array pattern. Every other pair of delimiters, a record or a
+computation expression say, keeps its space as with `true`.
 *)
 
 (*** hide ***)
 printfn
-    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.SpaceAroundDelimiter)} = {FormatConfig.Default.SpaceAroundDelimiter.ToString().ToLower()}"
+    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.SpaceAroundDelimiter)} = {SpaceAroundDelimiterStyle.ToConfigString FormatConfig.Default.SpaceAroundDelimiter}"
 (*** include-output ***)
 
 formatCode
@@ -433,6 +437,19 @@ formatCode
     """
     """
 fsharp_space_around_delimiter = false
+    """
+(*** include-output ***)
+
+formatCode
+    """ 
+    let swap xs =
+        match xs with
+        | [ a; b ] -> [ b; a ]
+        | _ -> [ 0 ]
+    let point = { X = 1; Y = 2 }
+    """
+    """
+fsharp_space_around_delimiter = patterns_only
     """
 (*** include-output ***)
 
@@ -1142,6 +1159,108 @@ let singleList =
     """
     """
 fsharp_experimental_elmish = true
+    """
+(*** include-output ***)
+
+(**
+<fantomas-setting red></fantomas-setting>
+### fsharp_align_rows
+<copy-to-clipboard text="fsharp_align_rows = true"></copy-to-clipboard>
+
+Lays out rows that have the same shape as a table. Rows are consecutive one-line match clauses,
+consecutive one-line `let` bindings of a plain name, all names as wide, and the operands of a chain
+that `fsharp_hanging_infix_operators` hangs. Their expressions have the same shape when they are the
+same parentheses, tuples, lists and arrays with as many items, calls of the same function with as
+many arguments, and the same infix operators.
+
+A narrower cell is padded to the widest in its column and centred in it, the odd space on the
+left. Only names, numbers, characters and `A[i]` are padded; a column of strings or of expressions
+of different widths ends the table. Below the root of a row, a row may lack the right-hand side of
+an infix operator the others have, and that part is left blank, unless nothing but closing
+brackets follows it.
+
+A blank line or a comment ends a run of rows, as does a clause with a guard. Takes `true` or
+`false`. Lining tokens up on a column taken from the widest cell goes against
+[the rule of multitudes](./RuleOfMultitudes.html): a change to one row can move all the others.
+*)
+
+(*** hide ***)
+printfn
+    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.AlignRows)} = {FormatConfig.Default.AlignRows.ToString().ToLower()}"
+(*** include-output ***)
+
+formatCode
+    """ 
+let split quintuplet ending =
+    let a0 = (quintuplet &&& 0xF800000000L) >>> 35 |> int
+    let a6 = (quintuplet &&& 0x00000003E0L) >>> 5 |> int
+    let a7 = (quintuplet &&& 0x000000001FL) |> int
+
+    match ending with
+    | 1 -> [ '='; '='; A[a6]; A[a0] ]
+    | _ -> [ A[a7]; A[a6]; A[a1]; A[a0] ]
+    """
+    """
+fsharp_align_rows = true
+    """
+(*** include-output ***)
+
+(**
+<fantomas-setting red></fantomas-setting>
+### fsharp_align_match_arrows
+<copy-to-clipboard text="fsharp_align_match_arrows = true"></copy-to-clipboard>
+
+Pads the patterns of consecutive one-line match clauses so that their `->` line up. A clause that
+does not fit on one line, a clause with a guard, and a blank line or comment before a clause each end
+the run. Takes `true` or `false`.
+*)
+
+(*** hide ***)
+printfn
+    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.AlignMatchArrows)} = {FormatConfig.Default.AlignMatchArrows.ToString().ToLower()}"
+(*** include-output ***)
+
+formatCode
+    """ 
+let describe xs =
+    match xs with
+    | [] -> "none"
+    | [ _ ] -> "one"
+    | _ -> "many"
+    """
+    """
+fsharp_align_match_arrows = true
+    """
+(*** include-output ***)
+
+(**
+<fantomas-setting red></fantomas-setting>
+### fsharp_hanging_infix_operators
+<copy-to-clipboard text="fsharp_hanging_infix_operators = true"></copy-to-clipboard>
+
+A `let` whose right-hand side is a chain of one operator, wider than
+`fsharp_max_infix_operator_expression`, keeps the first operand on the line of the `=`. Every
+further line starts with the operator one column after the `=`, so all the operands line up.
+
+The operators `=`, `<`, `>`, `%`, `%%`, `^`, `:=` and `?` never hang: the compiler rejects a
+continuation line that starts with one of them in this position. Nor does a chain whose widest line
+would go past `max_line_length`. Takes `true` or `false`.
+*)
+
+(*** hide ***)
+printfn
+    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.HangingInfixOperators)} = {FormatConfig.Default.HangingInfixOperators.ToString().ToLower()}"
+(*** include-output ***)
+
+formatCode
+    """ 
+let pack x0 x1 x2 x3 x4 =
+    let quintuplet = (int64 x0 <<< 32) ||| (int64 x1 <<< 24) ||| (int64 x2 <<< 16) ||| (int64 x3 <<< 8) ||| (int64 x4)
+    quintuplet
+    """
+    """
+fsharp_hanging_infix_operators = true
+fsharp_align_rows = true
     """
 (*** include-output ***)
 

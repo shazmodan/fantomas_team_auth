@@ -46,6 +46,9 @@ type WriterModel =
 
     member IsDummy: bool
 
+/// A node's range as a key of `Context.Padding`: start line, start column, end line, end column.
+type PaddingKey = int * int * int * int
+
 [<System.Diagnostics.DebuggerDisplay("\"{Dump()}\""); NoComparison>]
 type Context =
     {
@@ -58,6 +61,11 @@ type Context =
         /// When enabled, genNode emits NodeStart/NodeEnd WriterEvents around each Oak node.
         /// Only used by CodeFormatter.GetWriterEventsAsync for diagnostic output.
         DebugMode: bool
+        /// Spaces the alignment settings put before and after a node, keyed by the node's range.
+        /// Read where an expression, or the `->` of a match clause, is written.
+        Padding: Map<PaddingKey, int * int>
+        /// The line and column right after the last `writePadding`, see `sepSpace`.
+        PaddingEnd: struct (int * int) voption
     }
 
     /// Initialize with a string writer and use space as delimiter
@@ -140,6 +148,10 @@ val sepNone: ('a -> 'a)
 val sepDot: (Context -> Context)
 val sepSpace: ctx: Context -> Context
 val addFixedSpaces: targetColumn: int -> ctx: Context -> Context
+val paddingKey: range: range -> PaddingKey
+/// Spaces that line a token up with the same token on the rows around it; a `sepSpace` right
+/// after them still writes its own space.
+val writePadding: count: int -> ctx: Context -> Context
 val sepNln: (Context -> Context)
 val sepNlnForTrivia: (Context -> Context)
 val sepNlnUnlessLastEventIsNewline: ctx: Context -> Context
@@ -150,6 +162,8 @@ val sepArrow: (Context -> Context)
 val sepArrowRev: (Context -> Context)
 val sepBar: (Context -> Context)
 val addSpaceIfSpaceAroundDelimiter: ctx: Context -> Context
+/// A space inside the brackets of a list or array expression, which `patterns_only` leaves out.
+val addSpaceIfSpaceAroundListDelimiter: ctx: Context -> Context
 val addSpaceIfSpaceAfterComma: ctx: Context -> Context
 /// opening token of list
 val sepOpenLFixed: (Context -> Context)

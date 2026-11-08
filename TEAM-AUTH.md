@@ -10,6 +10,41 @@ https://nuget.pkg.github.com/shazmodan/index.json
 The package id has to stay `fantomas`. Ionide (VS Code) and the F# Formatting extension (Visual
 Studio) find the tool through `Fantomas.Client`, which accepts no other name.
 
+## The team's settings
+
+Put this in the `.editorconfig` at the root of a team repository. The last three settings and the
+`patterns_only` value exist only in this fork; the official Fantomas reports them as unknown.
+
+```ini
+[*.{fs,fsi,fsx}]
+max_line_length = 200
+fsharp_space_before_colon = true
+fsharp_space_before_uppercase_invocation = true
+fsharp_blank_lines_around_nested_multiline_expressions = false
+fsharp_max_infix_operator_expression = 90
+fsharp_max_value_binding_width = 200
+fsharp_multiline_bracket_style = stroustrup
+fsharp_record_multiline_formatter = number_of_items
+fsharp_max_record_number_of_items = 1
+fsharp_multi_line_lambda_closing_newline = true
+fsharp_space_around_delimiter = patterns_only
+fsharp_align_rows = true
+fsharp_align_match_arrows = true
+fsharp_hanging_infix_operators = true
+```
+
+`docs/docs/end-users/Configuration.fsx` describes every setting. What this fork adds:
+
+| Setting | Values | Default | What it does |
+| --- | --- | --- | --- |
+| `fsharp_space_around_delimiter` | `true`, `false`, `patterns_only` (new) | `true` | `patterns_only`: no space inside the brackets of a list or array expression, `[x1; x0]`, while a list or array pattern keeps it, `\| [ "m", m ] ->`. Records and every other pair of delimiters keep their space. |
+| `fsharp_align_rows` (new) | `true`, `false` | `false` | Rows of the same shape are laid out as a table: consecutive one-line match clauses, consecutive one-line `let`s of names as wide, and the operands of a hanging chain. A narrower name, number, character or `A[i]` is centred in its column, the odd space on the left (`>>>  5`, `(x0,  x1, 0uy)`, `[ '=' ; A[a1]]`). A row that lacks the right-hand side of an infix operator the others have gets a blank there (`(q &&& 0x1FL)        \|> int`). |
+| `fsharp_align_match_arrows` (new) | `true`, `false` | `false` | Consecutive one-line match clauses pad their patterns so that `->` lines up. A guard, a multiline clause, or a blank line or comment ends the run. |
+| `fsharp_hanging_infix_operators` (new) | `true`, `false` | `false` | A `let` whose right-hand side is a chain of one operator wider than `fsharp_max_infix_operator_expression` keeps its first operand on the `=` line; each further line starts with the operator one column after the `=`. Never for `=`, `<`, `>`, `%`, `%%`, `^`, `:=` or `?`, which cannot start such a line. |
+
+`src/Fantomas.Core.SnapshotTests/cases/settings/fsharp_align_rows/true/ModuleDecl/NestedModule/team-auth-base32-and-hash-helper.fs`
+holds a whole file formatted with these settings, and its gold what it formats to.
+
 ## Releasing
 
 `.github/workflows/release-svea.yml` runs on every push to `main`. It releases when the first

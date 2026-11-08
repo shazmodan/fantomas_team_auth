@@ -205,6 +205,8 @@ module WriterEvents =
             | _ -> false
         )
 
+type PaddingKey = int * int * int * int
+
 [<System.Diagnostics.DebuggerDisplay("\"{Dump()}\""); NoComparison>]
 type Context =
     {
@@ -213,6 +215,8 @@ type Context =
         WriterEvents: EventList
         FormattedCursor: pos option
         DebugMode: bool
+        Padding: Map<PaddingKey, int * int>
+        PaddingEnd: struct (int * int) voption
     }
 
     static member Default =
@@ -222,6 +226,8 @@ type Context =
             WriterEvents = EventList()
             FormattedCursor = None
             DebugMode = false
+            Padding = Map.empty
+            PaddingEnd = ValueNone
         }
 
     static member Create config : Context =
@@ -575,6 +581,11 @@ let sepSpace (ctx: Context) =
         (!-" ") ctx
     else
 
+    match ctx.PaddingEnd with
+    // The spaces written there line a token up; the separator that follows still needs its own.
+    | ValueSome(struct (line, column)) when line = ctx.WriterModel.LineCount && column = ctx.Column -> !- " " ctx
+    | _ ->
+
     match lastWriteEventOnLastLine ctx with
     | Some w when (String.endsWithOrdinal " " w || String.endsWithOrdinal Environment.NewLine w) -> ctx
     | None -> ctx
@@ -585,6 +596,20 @@ let sepSpace (ctx: Context) =
 let addFixedSpaces (targetColumn: int) (ctx: Context) : Context =
     let delta = targetColumn - ctx.Column
     onlyIf (delta > 0) (rep delta (!-" ")) ctx
+
+let paddingKey (range: range) : PaddingKey =
+    range.StartLine, range.StartColumn, range.EndLine, range.EndColumn
+
+let writePadding (count: int) (ctx: Context) : Context =
+    if count <= 0 then
+        ctx
+    else
+
+    let ctx: Context = !- (String(' ', count)) ctx
+
+    { ctx with
+        PaddingEnd = ValueSome(struct (ctx.WriterModel.LineCount, ctx.Column))
+    }
 
 let sepNln = writerEvent WriteLine
 
@@ -603,7 +628,10 @@ let sepArrowRev = !-" <- "
 let sepBar = !-"| "
 
 let addSpaceIfSpaceAroundDelimiter (ctx: Context) =
-    onlyIf ctx.Config.SpaceAroundDelimiter sepSpace ctx
+    onlyIf (ctx.Config.SpaceAroundDelimiter <> SpaceAroundDelimiterStyle.Never) sepSpace ctx
+
+let addSpaceIfSpaceAroundListDelimiter (ctx: Context) : Context =
+    onlyIf (ctx.Config.SpaceAroundDelimiter = SpaceAroundDelimiterStyle.Always) sepSpace ctx
 
 let addSpaceIfSpaceAfterComma (ctx: Context) =
     onlyIf ctx.Config.SpaceAfterComma sepSpace ctx
