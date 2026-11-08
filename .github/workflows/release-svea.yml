@@ -29,7 +29,13 @@ env:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    # Team Auth only runs Fantomas on Windows, so the tests that gate a release run there too.
+    runs-on: windows-latest
+    # Every step is written for bash, which Git for Windows provides on the runner. Without this a
+    # step with no `shell` would run in PowerShell, where "$PACKAGE" is not the environment variable.
+    defaults:
+      run:
+        shell: bash
     permissions:
       # The tag and the GitHub release.
       contents: write
@@ -41,11 +47,10 @@ jobs:
 
     - name: Decide whether to release
       id: version
-      shell: bash
       run: |
         # The first heading that starts with a digit, which skips an `## [Unreleased]` section the
         # same way KeepAChangelog does.
-        version=$(grep -m1 -oP '^## \[\K[0-9][^\]]*' CHANGELOG.md)
+        version=$(sed -nE 's/^## \[([0-9][^]]*)\].*/\1/p' CHANGELOG.md | head -n 1)
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
         if [[ "$version" != *-svea.* ]]; then
@@ -80,7 +85,6 @@ jobs:
 
     - name: Pack
       if: steps.version.outputs.release == 'true'
-      shell: bash
       run: |
         # Directory.Build.props points RepositoryUrl at upstream. GitHub Packages links a package to
         # the repository its metadata names, and refuses the push when the token cannot write there,
@@ -108,7 +112,6 @@ jobs:
 
     - name: Tag and create the GitHub release
       if: steps.version.outputs.release == 'true'
-      shell: bash
       env:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         VERSION: ${{ steps.version.outputs.version }}
