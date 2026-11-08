@@ -4,7 +4,8 @@ name: Release (Team Auth)
 # Packages NuGet feed, where the team repos install it from.
 #
 # What gets released is decided by CHANGELOG.md alone: its first versioned heading is the version
-# the package gets (Ionide.KeepAChangelog.Tasks reads it at build time). A run releases that version
+# the package gets (Ionide.KeepAChangelog.Tasks reads it at build time, see "Changelog of this
+# release" below). A run releases that version
 # when it carries the fork's suffix, `-svea.N`, and no `v<version>` tag exists yet. Anything else is
 # skipped, so pushes that do not bump the changelog, and upstream versions merged in, publish nothing.
 #
@@ -75,9 +76,30 @@ jobs:
       if: steps.version.outputs.release == 'true'
       run: dotnet fsi build.fsx -p Init
 
+    - name: Changelog of this release
+      if: steps.version.outputs.release == 'true'
+      env:
+        VERSION: ${{ steps.version.outputs.version }}
+      run: |
+        # Ionide.KeepAChangelog.Tasks versions the build after the highest version in the changelog,
+        # not the first. A Team Auth version is a prerelease of the upstream version it is based on,
+        # 8.1.1-svea.1 below 8.1.1, so read from CHANGELOG.md it would build as 8.1.1. A changelog
+        # holding this release's section alone gives the build this version and these release notes.
+        # A version passed with -p:Version does not help: the task sets it inside a target, which
+        # overrides a global property.
+        {
+          printf '# Changelog\n\n'
+          awk -v heading="## [$VERSION]" '
+            index($0, heading) == 1 { found = 1; print; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md
+        } > release-changelog.md
+        echo "CHANGELOG_FILE=$GITHUB_WORKSPACE/release-changelog.md" >> "$GITHUB_ENV"
+
     - name: Build
       if: steps.version.outputs.release == 'true'
-      run: dotnet build -c Release
+      run: dotnet build -c Release "-p:ChangelogFile=$CHANGELOG_FILE"
 
     - name: Test
       if: steps.version.outputs.release == 'true'
@@ -91,6 +113,7 @@ jobs:
         # so name this fork instead. Overridden here rather than in the props to keep merges from
         # upstream clean.
         dotnet pack src/Fantomas -c Release --no-build \
+          "-p:ChangelogFile=$CHANGELOG_FILE" \
           -p:RepositoryUrl=https://github.com/${{ github.repository }}
 
         package="artifacts/package/release/fantomas.${{ steps.version.outputs.version }}.nupkg"

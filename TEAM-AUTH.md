@@ -62,6 +62,9 @@ version heading in `CHANGELOG.md` has the fork's suffix and has no tag yet:
 2. The workflow builds, runs every test, packs `src/Fantomas`, pushes `fantomas.8.1.1-svea.1.nupkg`
    to the feed, and creates the tag `v8.1.1-svea.1` with a GitHub release.
 
+The build is versioned from that section alone. Read from the whole changelog, the build would take
+the highest version in it, and `8.1.1-svea.1` is a prerelease of `8.1.1`, below it.
+
 For the next release, bump the last number (`-svea.2`). After merging a new upstream version,
 start again from it (`8.2.0-svea.1`). A version without `-svea.` is never released, so merging
 upstream's changelog publishes nothing until you add your own section.
