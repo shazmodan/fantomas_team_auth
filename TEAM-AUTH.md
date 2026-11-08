@@ -72,100 +72,123 @@ upstream's changelog publishes nothing until you add your own section.
 Use `-svea.N`, not a four part version such as `8.1.1.1`. `Fantomas.Client` reads the version as
 semver and ignores a tool it cannot parse.
 
-## Using it in a team repository
+## Adding it to an F# repository
 
-### Access to the package
+The steps below assume a release has been published (see "Releasing"): until the release workflow
+has run, there is no package to install.
 
-This repository is private, so the package it publishes is private too: GitHub Packages gives a
-package the visibility of the repository it is linked to. Nobody but the owner can restore it until
-they are given access in the package's settings. That page exists once the first release has been
-published: on the owner's profile, **Packages**, `fantomas`, **Package settings**.
+1. **Give people access to the package.** This repository is private, so the package it publishes
+   is private too: GitHub Packages gives a package the visibility of the repository it is linked
+   to. The settings page exists once the first release is out: on the owner's profile,
+   **Packages**, `fantomas`, **Package settings**.
 
-- **People:** under **Manage access**, add each team member with the **Read** role.
-- **Other repositories' CI:** under **Manage Actions access**, add each repository whose workflows
-  restore the tool, with the **Read** role.
+   - **People:** under **Manage access**, add each team member with the **Read** role.
+   - **Other repositories' CI:** under **Manage Actions access**, add each repository whose
+     workflows restore the tool, with the **Read** role.
 
-A token on its own is not enough. Someone without access gets a `401` or `403` from the feed, even
-with a token that has the `read:packages` scope.
+   A token on its own is not enough. Someone without access gets a `401` or `403` from the feed,
+   even with a token that has the `read:packages` scope.
 
-### Authentication
+2. **Each developer creates a token.** A personal access token (classic) with the `read:packages`
+   scope. GitHub Packages asks for one even to read a public package.
 
-GitHub Packages asks for a token even to read a public package. Each developer creates a personal
-access token (classic) with the `read:packages` scope, and stores it once per machine:
+3. **Add a `NuGet.config` to the repository root.** It adds the feed, and maps `fantomas` to it
+   alone, so the official package on nuget.org can never be restored in its place. A repository
+   that already has a `NuGet.config` gets the `svea` source and the `packageSourceMapping` block
+   added to it.
 
-```bash
-dotnet nuget update source svea --username <github-user> --password <token> --store-password-in-clear-text
-```
+   ```xml
+   <?xml version="1.0" encoding="utf-8"?>
+   <configuration>
+     <packageSources>
+       <clear />
+       <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+       <add key="svea" value="https://nuget.pkg.github.com/shazmodan/index.json" />
+     </packageSources>
+     <packageSourceMapping>
+       <packageSource key="svea">
+         <package pattern="fantomas" />
+       </packageSource>
+       <packageSource key="nuget.org">
+         <package pattern="*" />
+       </packageSource>
+     </packageSourceMapping>
+   </configuration>
+   ```
 
-(Run it after the `NuGet.config` below is in the repo. On Windows the password is encrypted and the
-last flag can be left out.)
+4. **Each developer stores their token, once per machine.** In the repository root, after step 3.
+   On Windows the password is encrypted, and the last flag can be left out.
 
-In another repository's GitHub Actions workflow, its own `secrets.GITHUB_TOKEN` is enough, once
-that repository has been given access under **Manage Actions access**. The job needs
-`packages: read`, and the token has to be stored before the restore:
+   ```bash
+   dotnet nuget update source svea --username <github-user> --password <token> --store-password-in-clear-text
+   ```
 
-```yaml
-permissions:
-  contents: read
-  packages: read
-steps:
-  - uses: actions/checkout@v7.0.1
-  - uses: actions/setup-dotnet@v6
-  - run: dotnet nuget update source svea --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
-  - run: dotnet tool restore
-```
+5. **Install the tool as a local tool.** The first command only where the repository has no
+   `.config/dotnet-tools.json` yet.
 
-### NuGet.config
+   ```bash
+   dotnet new tool-manifest
+   ```
 
-Add the feed, and map `fantomas` to it alone so the official package on nuget.org can never be
-restored in its place:
+   ```bash
+   dotnet tool install fantomas --version 8.1.1-svea.1
+   ```
 
-```xml
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-    <add key="svea" value="https://nuget.pkg.github.com/shazmodan/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="svea">
-      <package pattern="fantomas" />
-    </packageSource>
-    <packageSource key="nuget.org">
-      <package pattern="*" />
-    </packageSource>
-  </packageSourceMapping>
-</configuration>
-```
+   A repository that already uses the official Fantomas runs
+   `dotnet tool update fantomas --version 8.1.1-svea.1` instead. Commit
+   `.config/dotnet-tools.json`, which should now say `8.1.1-svea.1`; everyone else runs
+   `dotnet tool restore`. Prefer this local tool over a global one: the editors look for a local
+   tool first, and the version is pinned in the repository.
 
-### Install the tool
+6. **Add the team's settings to the `.editorconfig` at the repository root.** The block in "The
+   team's settings" above, with `root = true` at the top of a new file.
 
-```bash
-dotnet tool install fantomas --version 8.1.1-svea.1
-```
+7. **Check which build runs.** This is also the build the editors start. It should print
+   `v8.1.1-svea.1`; anything else means the tool came from somewhere other than the feed, so
+   steps 3 to 5 are worth going over again.
 
-Commit the `.config/dotnet-tools.json` this writes. Everyone else, and CI, runs:
+   ```bash
+   dotnet fantomas --version
+   ```
 
-```bash
-dotnet tool restore
-```
+8. **Leave out what should not be formatted.** List generated or vendored code in a
+   `.fantomasignore` at the root, which uses the syntax of `.gitignore`. Indent any file that uses
+   tabs with spaces first: F# rejects tabs, so Fantomas cannot read such a file at all.
 
-Prefer this local tool over a global one: the editors look for a local tool first, and the version
-is pinned in the repository.
+9. **Format the whole repository once, and commit that on its own.**
 
-### Editors
+   ```bash
+   dotnet fantomas .
+   ```
 
-- **VS Code:** Ionide, with `"[fsharp]": { "editor.defaultFormatter": "Ionide.Ionide-fsharp" }`.
-  Reload the window after changing the tool version.
-- **Visual Studio:** the F# Formatting extension (`asti.fantomas-vs22`). Restart Visual Studio
-  after changing the tool version.
+   Read the diff before committing. Keeping it in a commit, ideally a pull request, of its own
+   keeps it out of real changes, and listing that commit in a `.git-blame-ignore-revs` file lets
+   `git blame` skip it.
 
-`dotnet fantomas --version` in the repository shows which build the editors will start.
+10. **Set up the editors.** Both find the local tool from step 5 on their own.
 
-### CI
+    - **VS Code:** Ionide, with `"[fsharp]": { "editor.defaultFormatter": "Ionide.Ionide-fsharp" }`.
+      Reload the window after changing the tool version.
+    - **Visual Studio:** the F# Formatting extension (`asti.fantomas-vs22`). Restart Visual
+      Studio after changing the tool version.
 
-```bash
-dotnet tool restore
-dotnet fantomas --check .
-```
+11. **Check the formatting in CI.** In the repository's GitHub Actions workflow, its own
+    `secrets.GITHUB_TOKEN` is enough once the repository has been given access in step 1. The job
+    needs `packages: read`, and the token has to be stored before the restore. `--check` changes
+    nothing and fails the job when a file is not formatted.
+
+    ```yaml
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-dotnet@v6
+      - run: dotnet nuget update source svea --username ${{ github.actor }} --password ${{ secrets.GITHUB_TOKEN }} --store-password-in-clear-text
+      - run: dotnet tool restore
+      - run: dotnet fantomas --check .
+    ```
+
+12. **Upgrade with each new release.** Run
+    `dotnet tool update fantomas --version <new version>`, commit
+    `.config/dotnet-tools.json`, and reload or restart the editors.
