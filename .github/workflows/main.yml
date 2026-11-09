@@ -6,20 +6,38 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
+# Every job runs on the owner's own Windows machine, registered as a self-hosted runner, as the
+# release does, so a check costs no Actions minutes. A check waits in the queue until the machine
+# is online, and with one machine the jobs run one after another. TEAM-AUTH.md, "The release
+# runner", says what it needs installed.
+#
+# Every step runs in bash, which Git for Windows provides, as in release-svea.yml. Each job's first
+# step puts Git's bin folder first on the PATH, so WSL's bash.exe in System32 is never picked up.
+defaults:
+  run:
+    shell: bash
+
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
         # Team Auth only runs Fantomas on Windows. Kept as a matrix so the check keeps its name,
-        # `build (windows-latest)`.
+        # `build (windows-latest)`, although the job runs on the self-hosted runner.
         os: [windows-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: [self-hosted, Windows, X64]
 
     steps:
+    - name: Put Git's bash first on the PATH
+      shell: cmd
+      run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
     - uses: actions/checkout@v7.0.1
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v6
+      env:
+        # Into the runner's own tool cache rather than Program Files, which a runner installed as a
+        # service, running as NETWORK SERVICE, cannot write to.
+        DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
       with:
         cache: true
         cache-dependency-path: Directory.Packages.props
@@ -31,13 +49,20 @@ jobs:
       run: dotnet fsi build.fsx -p Benchmark
 
   documentation:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     permissions:
       contents: write
     steps:
+    - name: Put Git's bash first on the PATH
+      shell: cmd
+      run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
     - uses: actions/checkout@v7.0.1
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v6
+      env:
+        # Into the runner's own tool cache rather than Program Files, which a runner installed as a
+        # service, running as NETWORK SERVICE, cannot write to.
+        DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
       with:
         cache: true
         cache-dependency-path: Directory.Packages.props
@@ -54,7 +79,7 @@ jobs:
 
   analyze:
     name: Analyze solution
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Windows, X64]
     # upload-sarif reads this workflow run and writes code scanning results. A repository whose
     # default token is read-only grants neither, and the upload fails with "Resource not accessible
     # by integration". While the repository is private the upload is skipped, and these do no harm.
@@ -63,11 +88,19 @@ jobs:
       actions: read
       security-events: write
     steps:
+      - name: Put Git's bash first on the PATH
+        shell: cmd
+        run: echo C:\Program Files\Git\bin>>"%GITHUB_PATH%"
+
       - name: Checkout
         uses: actions/checkout@v7.0.1
 
       - name: Setup .NET Core
         uses: actions/setup-dotnet@v6
+        env:
+          # Into the runner's own tool cache rather than Program Files, which a runner installed as a
+          # service, running as NETWORK SERVICE, cannot write to.
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}/dotnet
         with:
           cache: true
           cache-dependency-path: Directory.Packages.props

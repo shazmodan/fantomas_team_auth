@@ -76,10 +76,12 @@ semver and ignores a tool it cannot parse.
 
 ### The release runner
 
-The release job runs on the owner's own Windows machine, registered with this repository as a
-self-hosted runner, rather than on one of GitHub's: a release then costs no Actions minutes. The
-pull request checks in `main.yml` still run on GitHub's runners. A release waits in the queue until
-the machine is online, and GitHub cancels a job that has waited 24 hours.
+The release job, and the checks in `main.yml` that run on every push and pull request, run on the
+owner's own Windows machine, registered with this repository as a self-hosted runner, rather than
+on one of GitHub's: they then cost no Actions minutes. A job waits in the queue until the machine is
+online, and GitHub cancels a job that has waited 24 hours. With one machine the jobs run one after
+another, so a push to a branch with a pull request queues its three checks twice, once for the
+push and once for the pull request.
 
 The machine needs:
 
