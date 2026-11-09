@@ -247,11 +247,16 @@ This setting influences function invocation in expressions and patterns.
 Only the name immediately in front of the parenthesis decides whether this setting or `fsharp_space_before_lowercase_invocation` applies, so `a.b.Foo (x)` follows this one and `a.B.foo(x)` follows the other.
 Neither applies unless the whole thing being called is a plain dotted name: a call, an index, a receiver that is not a name, or a type application anywhere in it keeps the parenthesis tight, which leaves `a.Foo(x).Bar(y)` and `X<Y>.Foo(x)` untouched by either setting.
 See [Formatting chain expressions](./Chains.html#The-two-space-settings).
+
+Takes `true`, `false` or `except_lowercase_receiver`. `except_lowercase_receiver` is `true`, except
+for a member called on a value whose name starts lower-case: `builder.MapPost(x)` and
+`this.Items.Add(x)` stay tight, while `Ok (x)` and a call on a module or type, `String.Join (",", xs)`,
+keep the space.
 *)
 
 (*** hide ***)
 printfn
-    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.SpaceBeforeUppercaseInvocation)} = {FormatConfig.Default.SpaceBeforeUppercaseInvocation.ToString().ToLower()}"
+    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.SpaceBeforeUppercaseInvocation)} = {SpaceBeforeUppercaseInvocationStyle.ToConfigString FormatConfig.Default.SpaceBeforeUppercaseInvocation}"
 (*** include-output ***)
 
 formatCode
@@ -264,6 +269,17 @@ match x with
     """
     """
 fsharp_space_before_uppercase_invocation = true
+    """
+(*** include-output ***)
+
+formatCode
+    """ 
+Value(a, b)
+String.Join(",", xs)
+builder.MapPost(pattern, handler)
+    """
+    """
+fsharp_space_before_uppercase_invocation = except_lowercase_receiver
     """
 (*** include-output ***)
 
@@ -1179,6 +1195,10 @@ of different widths ends the table. Below the root of a row, a row may lack the 
 an infix operator the others have, and that part is left blank, unless nothing but closing
 brackets follows it.
 
+The patterns of consecutive match clauses line up too, when they are tuples with as many items or
+chains of `::` with as many operands. Each cell is right-aligned in its column, so the commas or the
+`::` line up, and a clause with a multiline body takes part.
+
 A blank line or a comment ends a run of rows, as does a clause with a guard. Takes `true` or
 `false`. Lining tokens up on a column taken from the widest cell goes against
 [the rule of multitudes](./RuleOfMultitudes.html): a change to one row can move all the others.
@@ -1243,7 +1263,9 @@ A `let` whose right-hand side is a chain of one operator, wider than
 further line starts with the operator one column after the `=`, so all the operands line up.
 
 The operators `=`, `<`, `>`, `%`, `%%`, `^`, `:=` and `?` never hang: the compiler rejects a
-continuation line that starts with one of them in this position. Nor does a chain whose widest line
+continuation line that starts with one of them in this position. A pipeline or a composition,
+`|>`, `||>`, `|||>`, `<|`, `<||`, `<|||`, `>>` or `<<`, keeps the usual layout, with the first
+operand on a line of its own and the operators below it. Nor does a chain whose widest line
 would go past `max_line_length`. Takes `true` or `false`.
 *)
 

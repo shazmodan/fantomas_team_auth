@@ -47,7 +47,7 @@ module Base32 =
         let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567="
         let charCheck = [for c in input -> c] |> List.fold (fun acc i -> allowed.Contains (i) && acc) true
         match lengthCheck, charCheck with
-        | true, true ->
+        |  true,  true ->
             // RFC 4648
             let A = [for c in allowed -> c] |> List.mapi (fun i a -> a, i) |> Map.ofList
 
@@ -81,17 +81,17 @@ module Base32 =
             let parse input =
                 let rec loop acc =
                     function
-                    | a0 :: a1 :: '=' :: '=' :: '=' :: '=' :: '=' :: '=' :: _ -> octetToList 2 (a0, a1, '=', '=', '=', '=', '=', '=') @ acc
-                    | a0 :: a1 :: a2 :: a3 :: '=' :: '=' :: '=' :: '=' :: _   -> octetToList 4 (a0, a1,  a2,  a3, '=', '=', '=', '=') @ acc
-                    | a0 :: a1 :: a2 :: a3 :: a4 :: '=' :: '=' :: '=' :: _    -> octetToList 5 (a0, a1,  a2,  a3,  a4, '=', '=', '=') @ acc
-                    | a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: '=' :: _      -> octetToList 7 (a0, a1,  a2,  a3,  a4,  a5,  a6, '=') @ acc
-                    | a0 :: a1 :: a2 :: a3 :: a4 :: a5 :: a6 :: a7 :: tail    -> loop (octetToList 8 (a0, a1, a2, a3, a4, a5, a6, a7) @ acc) tail
-                    | _                                                       -> acc
+                    | a0 :: a1 :: '=' :: '=' :: '=' :: '=' :: '=' :: '=' ::    _ -> octetToList 2 (a0, a1, '=', '=', '=', '=', '=', '=') @ acc
+                    | a0 :: a1 ::  a2 ::  a3 :: '=' :: '=' :: '=' :: '=' ::    _ -> octetToList 4 (a0, a1,  a2,  a3, '=', '=', '=', '=') @ acc
+                    | a0 :: a1 ::  a2 ::  a3 ::  a4 :: '=' :: '=' :: '=' ::    _ -> octetToList 5 (a0, a1,  a2,  a3,  a4, '=', '=', '=') @ acc
+                    | a0 :: a1 ::  a2 ::  a3 ::  a4 ::  a5 ::  a6 :: '=' ::    _ -> octetToList 7 (a0, a1,  a2,  a3,  a4,  a5,  a6, '=') @ acc
+                    | a0 :: a1 ::  a2 ::  a3 ::  a4 ::  a5 ::  a6 ::  a7 :: tail -> loop (octetToList 8 (a0, a1, a2, a3, a4, a5, a6, a7) @ acc) tail
+                    | _                                                          -> acc
                 loop [] input
 
             Ok ([for c in input -> c] |> parse |> List.rev |> List.toArray)
-        | false, _ -> Error "Invalid Base32 string"
-        | _, false -> Error "Invalid characters in string"
+        | false,     _ -> Error "Invalid Base32 string"
+        |     _, false -> Error "Invalid characters in string"
 
 
 module HashHelper =
@@ -158,12 +158,12 @@ module HashHelper =
                 let cmpHashBase64 = argon2idHash password saltBytes memory iterations parallelism hashLength
                 let ourBest = (memory, iterations, parallelism, hashLength) = (argon2id_memory, argon2id_iterations, argon2id_parallelism, argon2id_hash_length)
                 match (cmpHashBase64 = hashBase64), ourBest, upgrade with
-                | true, true, _  -> return! Ok (true, None)
-                | true, _, false -> return! Ok (true, None)
-                | true, false, true ->
+                |  true,  true,     _ -> return! Ok (true, None)
+                |  true,     _, false -> return! Ok (true, None)
+                |  true, false,  true ->
                     let newPass = hashPassword password
                     return! Ok (true, Some newPass)
-                | false, _, _ -> return! Ok (false, None)
+                | false,     _,     _ -> return! Ok (false, None)
             | _ -> return! Error "Could not match algorithm"
         }
 

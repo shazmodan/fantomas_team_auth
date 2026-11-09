@@ -95,6 +95,8 @@ let parseSettingValue (defaultValue: obj) (value: string) : obj option =
     | :? EndOfLineStyle -> EndOfLineStyle.OfConfigString value |> Option.map box
     | :? MultilineBracketStyle -> MultilineBracketStyle.OfConfigString value |> Option.map box
     | :? SpaceAroundDelimiterStyle -> SpaceAroundDelimiterStyle.OfConfigString value |> Option.map box
+    | :? SpaceBeforeUppercaseInvocationStyle ->
+        SpaceBeforeUppercaseInvocationStyle.OfConfigString value |> Option.map box
     | _ -> None
 
 [<RequireQualifiedAccess>]
@@ -232,6 +234,7 @@ let settingValueToString (value: obj) : string option =
     | :? EndOfLineStyle as eols -> Some(EndOfLineStyle.ToConfigString eols)
     | :? MultilineBracketStyle as mbs -> Some(MultilineBracketStyle.ToConfigString mbs)
     | :? SpaceAroundDelimiterStyle as sads -> Some(SpaceAroundDelimiterStyle.ToConfigString sads)
+    | :? SpaceBeforeUppercaseInvocationStyle as sbuis -> Some(SpaceBeforeUppercaseInvocationStyle.ToConfigString sbuis)
     | _ -> None
 
 let settingValues (config: FormatConfig) : (string * string) list =

@@ -68,6 +68,32 @@ type SpaceAroundDelimiterStyle =
         | "patterns_only" -> Some SpaceAroundDelimiterStyle.PatternsOnly
         | _ -> None
 
+/// Where `fsharp_space_before_uppercase_invocation` puts a space between an upper-case name and the
+/// parenthesis of its argument.
+[<RequireQualifiedAccess; Struct>]
+type SpaceBeforeUppercaseInvocationStyle =
+    /// `true`: before every one, `Ok (x)`, `List.Empty (x)`, `builder.MapPost (x)`.
+    | Always
+    /// `false`: before none, `Ok(x)`.
+    | Never
+    /// `except_lowercase_receiver`: as `true`, except for a member called on a value whose name
+    /// starts lower-case, `builder.MapPost(x)`, `this.Items.Add(x)`. A call on a module or type,
+    /// `String.Join (",", xs)`, and one without a receiver, `Ok (x)`, keep the space.
+    | ExceptLowercaseReceiver
+
+    static member ToConfigString(cfg: SpaceBeforeUppercaseInvocationStyle) =
+        match cfg with
+        | SpaceBeforeUppercaseInvocationStyle.Always -> "true"
+        | SpaceBeforeUppercaseInvocationStyle.Never -> "false"
+        | SpaceBeforeUppercaseInvocationStyle.ExceptLowercaseReceiver -> "except_lowercase_receiver"
+
+    static member OfConfigString(cfgString: string) =
+        match cfgString with
+        | "true" -> Some SpaceBeforeUppercaseInvocationStyle.Always
+        | "false" -> Some SpaceBeforeUppercaseInvocationStyle.Never
+        | "except_lowercase_receiver" -> Some SpaceBeforeUppercaseInvocationStyle.ExceptLowercaseReceiver
+        | _ -> None
+
 [<RequireQualifiedAccess; Struct>]
 type EndOfLineStyle =
     | LF
@@ -131,8 +157,8 @@ type FormatConfig =
 
         [<Category("Spacing")>]
         [<DisplayName("Before uppercase invocation")>]
-        [<Description("Add a space between an upper-case function or method name and the opening parenthesis of its argument. Only the name immediately in front of the parenthesis decides which of the two invocation settings applies, and neither applies unless the whole thing being called is a plain dotted name: a call, an index, a receiver that is not a name, or a type application anywhere in it keeps the parenthesis tight.")>]
-        SpaceBeforeUppercaseInvocation: bool
+        [<Description("Add a space between an upper-case function or method name and the opening parenthesis of its argument. Only the name immediately in front of the parenthesis decides which of the two invocation settings applies, and neither applies unless the whole thing being called is a plain dotted name: a call, an index, a receiver that is not a name, or a type application anywhere in it keeps the parenthesis tight. except_lowercase_receiver leaves the space out of a member called on a value whose name starts lower-case, builder.MapPost(x), and keeps it everywhere else.")>]
+        SpaceBeforeUppercaseInvocation: SpaceBeforeUppercaseInvocationStyle
 
         [<Category("Spacing")>]
         [<DisplayName("Before class constructor")>]
@@ -279,7 +305,7 @@ type FormatConfig =
             InsertFinalNewline = true
             SpaceBeforeParameter = true
             SpaceBeforeLowercaseInvocation = true
-            SpaceBeforeUppercaseInvocation = false
+            SpaceBeforeUppercaseInvocation = SpaceBeforeUppercaseInvocationStyle.Never
             SpaceBeforeClassConstructor = false
             SpaceBeforeMember = false
             SpaceBeforeColon = false

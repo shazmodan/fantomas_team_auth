@@ -280,7 +280,7 @@ let addSpaceBeforeParenInPattern (node: IdentListNode) (ctx: Context) =
         | Some(IdentifierOrDot.Ident node) ->
             let parameterValue =
                 if Char.IsUpper node.Text.[0] then
-                    ctx.Config.SpaceBeforeUppercaseInvocation
+                    spaceBeforeUppercaseInvocation ctx.Config false
                 else
                     ctx.Config.SpaceBeforeLowercaseInvocation
 
@@ -784,6 +784,15 @@ let isPlainName (expr: Expr) : bool =
         | _ -> false
     | _ -> false
 
+/// Whether fsharp_space_before_uppercase_invocation puts a space before the `(` of a call on an
+/// upper-case name. `receiverIsLowercase` is whether it is a member called on a value whose name
+/// starts lower-case, `builder.MapPost(x)`, which `except_lowercase_receiver` keeps tight.
+let spaceBeforeUppercaseInvocation (config: FormatConfig) (receiverIsLowercase: bool) : bool =
+    match config.SpaceBeforeUppercaseInvocation with
+    | SpaceBeforeUppercaseInvocationStyle.Always -> true
+    | SpaceBeforeUppercaseInvocationStyle.Never -> false
+    | SpaceBeforeUppercaseInvocationStyle.ExceptLowercaseReceiver -> not receiverIsLowercase
+
 /// Whether the whole thing being called is a plain dotted name, which is what the space before
 /// the terminal call's `(` depends on. A call, an index, a receiver that is not a name, or a type
 /// application anywhere in it answers no.
@@ -814,9 +823,25 @@ let genTerminalSpace (node: ExprChain) (call: ChainCall) : Context -> Context =
 
     match List.tryLast node.Segments with
     | Some(ChainSegment.DotMember(_, funcExpr)) ->
-        match call with
-        | ChainCall.Unit u -> sepSpaceBeforeParenInFuncInvocation funcExpr (Expr.Constant(Constant.Unit u))
-        | ChainCall.Paren parenNode -> sepSpaceBeforeParenInFuncInvocation funcExpr (Expr.Paren parenNode)
+        fun ctx ->
+            let headIsLowercaseName: bool =
+                match node.Head with
+                | Expr.Ident ident -> not (isFirstCharUppercase ident.Text)
+                | Expr.OptVar optVar ->
+                    match optVar.Identifier.Content with
+                    | [ IdentifierOrDot.Ident ident ] -> not (isFirstCharUppercase ident.Text)
+                    | _ -> false
+                | _ -> false
+
+            match funcExpr with
+            // `builder.MapPost(x)`: the head is the value the member is called on, which
+            // sepSpaceBeforeParenInFuncInvocation does not see, as it is given only `MapPost`.
+            | UppercaseExpr when headIsLowercaseName && not (spaceBeforeUppercaseInvocation ctx.Config true) -> ctx
+            | _ ->
+
+            match call with
+            | ChainCall.Unit u -> sepSpaceBeforeParenInFuncInvocation funcExpr (Expr.Constant(Constant.Unit u)) ctx
+            | ChainCall.Paren parenNode -> sepSpaceBeforeParenInFuncInvocation funcExpr (Expr.Paren parenNode) ctx
     | _ -> sepNone
 
 /// The opener of the terminal call — the `(` and any space in front of it. This is the least
@@ -1361,7 +1386,7 @@ let genExprCore (e: Expr) : Context -> Context =
         | ParenExpr _ ->
             let sepSpaceBeforeArgs (ctx: Context) =
                 match node.Type with
-                | UppercaseType -> onlyIf ctx.Config.SpaceBeforeUppercaseInvocation sepSpace ctx
+                | UppercaseType -> onlyIf (spaceBeforeUppercaseInvocation ctx.Config false) sepSpace ctx
                 | LowercaseType -> onlyIf ctx.Config.SpaceBeforeLowercaseInvocation sepSpace ctx
 
             let short =
@@ -1977,7 +2002,33 @@ let genExprCore (e: Expr) : Context -> Context =
                     let singleLineTestExpr =
                         genExpr node.FunctionExpr +> sepSpace +> col sepSpace sequentialArgs genExpr
 
-                    if futureNlnCheck singleLineTestExpr ctx then
+                    let listsFitOnOneLine: bool =
+                        not (futureNlnCheck (genArrayOrList firstList) ctx)
+                        && not (futureNlnCheck (genArrayOrList lastList) ctx)
+
+                    if
+                        futureNlnCheck singleLineTestExpr ctx
+                        && listsFitOnOneLine
+                        && not sequentialArgs.IsEmpty
+                    then
+                        // The other arguments go on a line each, and so does each list when it fits
+                        // on one:
+                        //
+                        //     sqlGenConf
+                        //         "GeneratedCode"
+                        //         []
+                        //         [ StarSelection Deny ]    not on the line of `[]`
+                        //         [ "*Utc", ColTimeZone Timezone.Utc ]
+                        genExpr node.FunctionExpr
+                        +> indent
+                        +> sepNln
+                        +> col sepNln sequentialArgs genExpr
+                        +> sepNln
+                        +> genArrayOrList firstList
+                        +> sepNln
+                        +> genArrayOrList lastList
+                        +> unindent
+                    elif futureNlnCheck singleLineTestExpr ctx then
                         genExpr node.FunctionExpr
                         +> indent
                         +> sepNln
@@ -3342,9 +3393,104 @@ let consecutiveRuns (isRow: 'T -> bool) (startsRun: 'T -> 'T -> bool) (items: 'T
 
     go [] [] items
 
-/// The padding of the one-line clauses of a match: their bodies as rows (fsharp_align_rows), their
-/// `->` lined up (fsharp_align_match_arrows). A clause with trivia before it, or with a guard,
-/// starts a new run.
+/// The cells of a clause's pattern that fsharp_align_rows lines up, and the shape two patterns must
+/// share for that: the items of a tuple, or the operands of a chain of `::`.
+let patternCells (p: Pattern) : (string * Pattern list) option =
+    match p with
+    | Pattern.Tuple node ->
+        let items: Pattern list =
+            node.Items
+            |> List.choose (
+                function
+                | Choice1Of2 item -> Some item
+                | Choice2Of2 _ -> None
+            )
+
+        Some($"tuple %d{items.Length}", items)
+    | Pattern.ListCons _ ->
+        let rec operands (p: Pattern) : Pattern list =
+            match p with
+            | Pattern.ListCons node -> node.LeftHandSide :: operands node.RightHandSide
+            | _ -> [ p ]
+
+        let operands: Pattern list = operands p
+        Some($"cons %d{operands.Length}", operands)
+    | _ -> None
+
+/// The padding of the patterns of consecutive clauses of the same shape (fsharp_align_rows): every
+/// cell is right-aligned in its column, so that the commas or the `::` line up. The body of such a
+/// clause may be multiline; a guard, a pattern of another shape, or trivia before a clause ends the
+/// run.
+///
+///     |  true,     _, false -> return! Ok(true, None)
+///     |  true, false,  true ->
+///         return! Ok(true, Some newPass)
+///     | false,     _,     _ -> return! Ok(false, None)
+let alignedPatternPadding
+    (clauses: (int * MatchClauseNode) list)
+    (isOneLine: Map<PaddingKey, int * int> -> int * MatchClauseNode -> bool)
+    (ctx: Context)
+    : Map<PaddingKey, int * int>
+    =
+    let measure (padding: Map<PaddingKey, int * int>) (f: Context -> Context) : int option =
+        measureOneLine f { ctx with Padding = padding }
+
+    let shape (clause: MatchClauseNode) : string option =
+        match patternCells clause.Pattern with
+        | Some(shape, cells) when
+            clause.WhenExpr.IsNone
+            && (measure Map.empty (genPatInClause clause.Pattern)).IsSome
+            && cells |> List.forall (fun cell -> (measure Map.empty (genPat cell)).IsSome)
+            ->
+            Some shape
+        | _ -> None
+
+    let isRow (_: int, clause: MatchClauseNode) : bool = (shape clause).IsSome
+
+    let startsRun (_: int, previous: MatchClauseNode) (_: int, clause: MatchClauseNode) : bool =
+        clause.HasContentBefore || shape previous <> shape clause
+
+    clauses
+    |> consecutiveRuns isRow startsRun
+    |> List.map (fun run ->
+        if run.Length < 2 then
+            Map.empty
+        else
+
+        let padding: Map<PaddingKey, int * int> =
+            run
+            |> List.map (fun (_, clause) -> patternCells clause.Pattern |> Option.map snd |> Option.defaultValue [])
+            |> List.transpose
+            |> List.collect (fun column ->
+                let widths: (Pattern * int) list =
+                    column
+                    |> List.map (fun cell -> cell, measure Map.empty (genPat cell) |> Option.defaultValue 0)
+
+                let widest: int = widths |> List.map snd |> List.max
+
+                widths
+                |> List.choose (fun (cell, width) ->
+                    if width = widest then
+                        None
+                    else
+                        Some(paddingKey (Pattern.Node cell).Range, (widest - width, 0))
+                )
+            )
+            |> Map.ofList
+
+        // Every pattern stays on one line, and so does every clause that was one line.
+        let fits (clause: int * MatchClauseNode) : bool =
+            (measure padding (genPatInClause (snd clause).Pattern)).IsSome
+            && (not (isOneLine Map.empty clause) || isOneLine padding clause)
+
+        if List.forall fits run then padding else Map.empty
+    )
+    |> List.fold mergePadding Map.empty
+
+/// The padding of the clauses of a match: the cells of their patterns (fsharp_align_rows, see
+/// `alignedPatternPadding`), and of the one-line clauses their bodies as rows (fsharp_align_rows)
+/// and their `->` lined up (fsharp_align_match_arrows). A clause with trivia before it, or with a
+/// guard, starts a new run of one-line clauses.
 let alignedClausePadding (clauses: MatchClauseNode list) (ctx: Context) : Map<PaddingKey, int * int> =
     let lastIndex: int = clauses.Length - 1
 
@@ -3353,8 +3499,14 @@ let alignedClausePadding (clauses: MatchClauseNode list) (ctx: Context) : Map<Pa
     let isOneLine (padding: Map<PaddingKey, int * int>) (clause: int * MatchClauseNode) : bool =
         staysOnOneLine (genIndexedClause clause) { ctx with Padding = padding }
 
+    let patternPadding: Map<PaddingKey, int * int> =
+        if ctx.Config.AlignRows then
+            alignedPatternPadding (List.indexed clauses) isOneLine ctx
+        else
+            Map.empty
+
     let isRow (_: int, clause: MatchClauseNode) : bool =
-        clause.WhenExpr.IsNone && isOneLine Map.empty (0, clause)
+        clause.WhenExpr.IsNone && isOneLine patternPadding (0, clause)
 
     let startsRun (_: int * MatchClauseNode) (_: int, clause: MatchClauseNode) : bool = clause.HasContentBefore
 
@@ -3380,7 +3532,9 @@ let alignedClausePadding (clauses: MatchClauseNode list) (ctx: Context) : Map<Pa
             let widths: (MatchClauseNode * int) list =
                 run
                 |> List.map (fun (_, clause) ->
-                    clause, measureOneLine (genPatInClause clause.Pattern) ctx |> Option.defaultValue 0
+                    clause,
+                    measureOneLine (genPatInClause clause.Pattern) { ctx with Padding = patternPadding }
+                    |> Option.defaultValue 0
                 )
 
             let widest: int = widths |> List.map snd |> List.max
@@ -3391,14 +3545,14 @@ let alignedClausePadding (clauses: MatchClauseNode list) (ctx: Context) : Map<Pa
 
         let both: Map<PaddingKey, int * int> = mergePadding bodyPadding arrowPadding
 
-        if List.forall (isOneLine both) run then
+        if List.forall (isOneLine (mergePadding patternPadding both)) run then
             both
-        elif List.forall (isOneLine arrowPadding) run then
+        elif List.forall (isOneLine (mergePadding patternPadding arrowPadding)) run then
             arrowPadding
         else
             Map.empty
     )
-    |> List.fold mergePadding Map.empty
+    |> List.fold mergePadding patternPadding
 
 /// The padding of consecutive one-line `let`s whose right-hand sides line up (fsharp_align_rows).
 /// Only bindings of a plain name, all as wide, so that every `=` is already on one column.
@@ -3469,6 +3623,15 @@ let alignedBindingPadding
 let operatorsThatCannotHang: Set<string> =
     set [ "="; "<"; ">"; "%"; "%%"; "^"; ":="; "?" ]
 
+/// Operators of a pipeline or a composition, which keep the usual layout rather than hang: the
+/// first operand on a line of its own and every operator below it, at the same indent.
+///
+///     let additionalFields =
+///         [ getHeader Headers.CorrelationId; ipAddress ]
+///         |> List.map (fun (k, v) -> struct (k, box v))
+let pipelineOperators: Set<string> =
+    set [ "|>"; "||>"; "|||>"; "<|"; "<||"; "<|||"; ">>"; "<<" ]
+
 /// fsharp_hanging_infix_operators: a chain of one operator that is too long for one line keeps its
 /// first operand on the line of the `=`, and every further line starts with the operator one column
 /// after the `=`, so the operands line up:
@@ -3476,7 +3639,9 @@ let operatorsThatCannotHang: Set<string> =
 ///     let quintuplet =    (int64 x0 <<< 32)
 ///                     ||| (int64 x1 <<< 24)
 ///
-/// `ctx` is right after the `= ` of the binding. None leaves the chain to the usual layout.
+/// Never for an operator the compiler rejects there (`operatorsThatCannotHang`), nor for a pipeline
+/// (`pipelineOperators`). `ctx` is right after the `= ` of the binding. None leaves the chain to the
+/// usual layout.
 let tryGenHangingChain (e: Expr) (ctx: Context) : (Context -> Context) option =
     if
         not ctx.Config.HangingInfixOperators
@@ -3512,6 +3677,7 @@ let tryGenHangingChain (e: Expr) (ctx: Context) : (Context -> Context) option =
     if
         not sameOperator
         || operatorsThatCannotHang.Contains operator
+        || pipelineOperators.Contains operator
         || not tooWideForOneLine
     then
         None
@@ -4251,7 +4417,16 @@ let sepSpaceBeforeParenInFuncInvocation (functionExpr: Expr) (argExpr: Expr) ctx
     | _ when chainEndsInIndex || isEmptyIndex -> ctx
     | Expr.Constant _, _ -> sepSpace ctx
     | ParenExpr _, _ -> sepSpace ctx
-    | UppercaseExpr, ParenExpr _ -> onlyIf ctx.Config.SpaceBeforeUppercaseInvocation sepSpace ctx
+    | UppercaseExpr, ParenExpr _ ->
+        let receiverIsLowercase: bool =
+            match functionExpr with
+            | Expr.OptVar node ->
+                match node.Identifier.Content with
+                | IdentifierOrDot.Ident receiver :: _ :: _ -> not (isFirstCharUppercase receiver.Text)
+                | _ -> false
+            | _ -> false
+
+        onlyIf (spaceBeforeUppercaseInvocation ctx.Config receiverIsLowercase) sepSpace ctx
     | LowercaseExpr, ParenExpr _ -> onlyIf ctx.Config.SpaceBeforeLowercaseInvocation sepSpace ctx
     | Expr.Ident _, Expr.Ident _ -> sepSpace ctx
     | _ -> sepSpace ctx
@@ -4332,7 +4507,32 @@ let genNamePatPair (node: NamePatPairNode) =
     +> genPat node.Pattern
     |> genNode node
 
-let genPat (p: Pattern) =
+/// Every pattern is written through here, so that padding fsharp_align_rows put on a cell of a
+/// clause's pattern (`Context.Padding`) goes before and after it.
+let genPat (p: Pattern) (ctx: Context) : Context =
+    if ctx.Padding.IsEmpty then
+        genPatCore p ctx
+    else
+
+    let key: PaddingKey = paddingKey (Pattern.Node p).Range
+
+    match Map.tryFind key ctx.Padding with
+    | None -> genPatCore p ctx
+    | Some(before, after) ->
+
+    let padding: Map<PaddingKey, int * int> = ctx.Padding
+    // A node of the same range inside this one, such as the text of a name, is not padded again.
+    let ctx: Context =
+        writePadding
+            before
+            { ctx with
+                Padding = Map.remove key padding
+            }
+
+    let ctx: Context = genPatCore p ctx
+    writePadding after { ctx with Padding = padding }
+
+let genPatCore (p: Pattern) : Context -> Context =
     match p with
     | Pattern.OptionalVal n -> genSingleTextNode n
     | Pattern.Or node -> genPatLeftMiddleRight node

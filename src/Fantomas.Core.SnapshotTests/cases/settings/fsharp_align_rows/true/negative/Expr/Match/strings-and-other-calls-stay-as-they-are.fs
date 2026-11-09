@@ -3,9 +3,9 @@
 fsharp_align_rows = true
 ---*)
 let check lengthCheck charCheck =
-    match lengthCheck, charCheck with
-    | false, _ -> Error "Invalid Base32 string"
-    | _, false -> Error "Invalid characters in string"
+    match lengthCheck with
+    | false -> Error "Invalid Base32 string"
+    | true -> Error "Invalid characters in string"
     | _ -> Ok()
 
 let parse x =

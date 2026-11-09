@@ -385,6 +385,11 @@ type FantomasDaemon(sender: Stream, reader: Stream, environment: DaemonEnvironme
                         Some("multilineBracketStyle", MultilineBracketStyle.ToConfigString m)
                     | :? SpaceAroundDelimiterStyle as s ->
                         Some("spaceAroundDelimiterStyle", SpaceAroundDelimiterStyle.ToConfigString s)
+                    | :? SpaceBeforeUppercaseInvocationStyle as s ->
+                        Some(
+                            "spaceBeforeUppercaseInvocationStyle",
+                            SpaceBeforeUppercaseInvocationStyle.ToConfigString s
+                        )
                     | _ -> None
 
                 type'
@@ -427,6 +432,15 @@ type FantomasDaemon(sender: Stream, reader: Stream, environment: DaemonEnvironme
                             SpaceAroundDelimiterStyle.ToConfigString SpaceAroundDelimiterStyle.Always
                             SpaceAroundDelimiterStyle.ToConfigString SpaceAroundDelimiterStyle.Never
                             SpaceAroundDelimiterStyle.ToConfigString SpaceAroundDelimiterStyle.PatternsOnly
+                        ]
+                    "spaceBeforeUppercaseInvocationStyle",
+                    jsonStringArray
+                        [
+                            SpaceBeforeUppercaseInvocationStyle.ToConfigString
+                                SpaceBeforeUppercaseInvocationStyle.Always
+                            SpaceBeforeUppercaseInvocationStyle.ToConfigString SpaceBeforeUppercaseInvocationStyle.Never
+                            SpaceBeforeUppercaseInvocationStyle.ToConfigString
+                                SpaceBeforeUppercaseInvocationStyle.ExceptLowercaseReceiver
                         ]
                 ]
 
