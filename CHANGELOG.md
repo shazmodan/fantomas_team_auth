@@ -1,5 +1,20 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Value `except_lowercase_receiver` for `fsharp_space_before_uppercase_invocation` keeps a member called on a lower-case value tight. [#13](https://github.com/shazmodan/fantomas-team-auth/pull/13)
+
+### Changed
+
+- Setting `fsharp_align_rows` right-aligns the cells of tuple and `::` patterns of consecutive match clauses. [#13](https://github.com/shazmodan/fantomas-team-auth/pull/13)
+- Setting `fsharp_hanging_infix_operators` no longer hangs a pipeline or a composition. [#13](https://github.com/shazmodan/fantomas-team-auth/pull/13)
+
+### Fixed
+
+- Stroustrup style puts the two final list arguments on the line of the last argument when the arguments go on a line each. [#13](https://github.com/shazmodan/fantomas-team-auth/pull/13)
+
 ## [8.1.1-svea.1] - 2026-11-08
 
 ### Added
