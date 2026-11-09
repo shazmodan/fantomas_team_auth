@@ -80,8 +80,8 @@ The release job, and the checks in `main.yml` that run on every push and pull re
 owner's own Windows machine, registered with this repository as a self-hosted runner, rather than
 on one of GitHub's: they then cost no Actions minutes. A job waits in the queue until the machine is
 online, and GitHub cancels a job that has waited 24 hours. With one machine the jobs run one after
-another, so a push to a branch with a pull request queues its three checks twice, once for the
-push and once for the pull request.
+another. A push runs the checks only on `main`; on any other branch they run for its pull request,
+so a branch without one is not checked.
 
 The machine needs:
 

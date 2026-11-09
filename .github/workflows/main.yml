@@ -1,6 +1,11 @@
 name: Build main
 
-on: [push, pull_request]
+# A push runs the checks only on main. On any other branch the pull request's run covers it, and
+# with a single self-hosted runner a second run of the same commit would only queue behind it.
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
