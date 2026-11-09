@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [8.1.1-svea.2] - 2026-11-09
 
 ### Added
 

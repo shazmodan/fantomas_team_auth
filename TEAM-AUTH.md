@@ -170,12 +170,12 @@ has run, there is no package to install.
    ```
 
    ```bash
-   dotnet tool install fantomas --version 8.1.1-svea.1
+   dotnet tool install fantomas --version 8.1.1-svea.2
    ```
 
    A repository that already uses the official Fantomas runs
-   `dotnet tool update fantomas --version 8.1.1-svea.1` instead. Commit
-   `.config/dotnet-tools.json`, which should now say `8.1.1-svea.1`; everyone else runs
+   `dotnet tool update fantomas --version 8.1.1-svea.2` instead. Commit
+   `.config/dotnet-tools.json`, which should now say `8.1.1-svea.2`; everyone else runs
    `dotnet tool restore`. Prefer this local tool over a global one: the editors look for a local
    tool first, and the version is pinned in the repository.
 
@@ -183,7 +183,7 @@ has run, there is no package to install.
    team's settings" above, with `root = true` at the top of a new file.
 
 7. **Check which build runs.** This is also the build the editors start. It should print
-   `v8.1.1-svea.1`; anything else means the tool came from somewhere other than the feed, so
+   `v8.1.1-svea.2`; anything else means the tool came from somewhere other than the feed, so
    steps 3 to 5 are worth going over again.
 
    ```bash
