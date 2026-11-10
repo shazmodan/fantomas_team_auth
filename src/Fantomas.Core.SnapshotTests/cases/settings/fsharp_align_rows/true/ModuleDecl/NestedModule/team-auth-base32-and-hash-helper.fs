@@ -2,18 +2,19 @@
 # The file Team Auth formats with these settings: formatting it gives the gold, which formats to itself.
 max_line_length = 200
 fsharp_space_before_colon = true
-fsharp_space_before_uppercase_invocation = true
+fsharp_space_before_uppercase_invocation = except_lowercase_receiver
 fsharp_blank_lines_around_nested_multiline_expressions = false
 fsharp_max_infix_operator_expression = 90
+fsharp_max_value_binding_width = 200
 fsharp_multiline_bracket_style = stroustrup
 fsharp_record_multiline_formatter = number_of_items
-fsharp_max_record_number_of_items = 1
+fsharp_max_record_number_of_items = 2
 fsharp_multi_line_lambda_closing_newline = true
-fsharp_max_value_binding_width = 200
-fsharp_space_around_delimiter = patterns_only
+fsharp_space_around_delimiter = true
 fsharp_align_rows = true
 fsharp_align_match_arrows = true
 fsharp_hanging_infix_operators = true
+fsharp_multiline_let_pipelines = true
 ---*)
 module Base32 =
     let byteArrayToBase32 (input : byte[]) =

@@ -22,11 +22,11 @@ module Base32 =
                 let a7 = (quintuplet &&& 0x000000001FL)        |> int
 
                 match ending with
-                | 1 -> [ '=' ;  '=' ;  '=' ;  '=' ;  '=' ;  '=' ; A[a1]; A[a0]] // 01======
-                | 2 -> [ '=' ;  '=' ;  '=' ;  '=' ; A[a3]; A[a2]; A[a2]; A[a0]] // 0123====
-                | 3 -> [ '=' ;  '=' ;  '=' ; A[a4]; A[a3]; A[a2]; A[a1]; A[a0]] // 01234===
-                | 4 -> [ '=' ; A[a6]; A[a5]; A[a4]; A[a3]; A[a2]; A[a1]; A[a0]] // 0123456=
-                | _ -> [A[a7]; A[a6]; A[a5]; A[a4]; A[a3]; A[a2]; A[a1]; A[a0]] // 01234567
+                | 1 -> [  '=' ;  '=' ;  '=' ;  '=' ;  '=' ;  '=' ; A[a1]; A[a0] ] // 01======
+                | 2 -> [  '=' ;  '=' ;  '=' ;  '=' ; A[a3]; A[a2]; A[a2]; A[a0] ] // 0123====
+                | 3 -> [  '=' ;  '=' ;  '=' ; A[a4]; A[a3]; A[a2]; A[a1]; A[a0] ] // 01234===
+                | 4 -> [  '=' ; A[a6]; A[a5]; A[a4]; A[a3]; A[a2]; A[a1]; A[a0] ] // 0123456=
+                | _ -> [ A[a7]; A[a6]; A[a5]; A[a4]; A[a3]; A[a2]; A[a1]; A[a0] ] // 01234567
 
             let parse input =
                 let rec loop acc =
@@ -45,11 +45,14 @@ module Base32 =
     let base32ToByteArray (input : string) =
         let lengthCheck = input.Length % 8 = 0
         let allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567="
-        let charCheck = [for c in input -> c] |> List.fold (fun acc i -> allowed.Contains (i) && acc) true
+        let charCheck = [ for c in input -> c ] |> List.fold (fun acc i -> allowed.Contains(i) && acc) true
         match lengthCheck, charCheck with
         |  true,  true ->
             // RFC 4648
-            let A = [for c in allowed -> c] |> List.mapi (fun i a -> a, i) |> Map.ofList
+            let A =
+                [ for c in allowed -> c ]
+                |> List.mapi (fun i a -> a, i)
+                |> Map.ofList
 
             let (.@) (m : Map<char, int>) key =
                 try
@@ -72,11 +75,11 @@ module Base32 =
                 let x3 = (octet &&& 0x000000FF00L) >>>  8 |> byte
                 let x4 = (octet &&& 0x00000000FFL)        |> byte
                 match ending with
-                | 2 -> [x0]
-                | 4 -> [x1; x0]
-                | 5 -> [x2; x1; x0]
-                | 7 -> [x3; x2; x1; x0]
-                | _ -> [x4; x3; x2; x1; x0]
+                | 2 -> [ x0 ]
+                | 4 -> [ x1; x0 ]
+                | 5 -> [ x2; x1; x0 ]
+                | 7 -> [ x3; x2; x1; x0 ]
+                | _ -> [ x4; x3; x2; x1; x0 ]
 
             let parse input =
                 let rec loop acc =
@@ -89,7 +92,7 @@ module Base32 =
                     | _                                                          -> acc
                 loop [] input
 
-            Ok ([for c in input -> c] |> parse |> List.rev |> List.toArray)
+            Ok ([ for c in input -> c ] |> parse |> List.rev |> List.toArray)
         | false,     _ -> Error "Invalid Base32 string"
         |     _, false -> Error "Invalid characters in string"
 
@@ -113,7 +116,7 @@ module HashHelper =
         let x =
             (parameters.Split ",") |> Array.toList
             |>> (fun o ->
-                let v = o.Split ("=") |> Array.toList
+                let v = o.Split("=") |> Array.toList
                 v.Head, v.Tail.Head |> int
             )
         match x with
@@ -135,7 +138,7 @@ module HashHelper =
         hasher.MemorySize <- memory
         hasher.Iterations <- iterations
 
-        let cmpHashBytes = hasher.GetBytes (hashLength)
+        let cmpHashBytes = hasher.GetBytes(hashLength)
         let cmpHashBase64 = cmpHashBytes |> System.Convert.ToBase64String
         cmpHashBase64
 
@@ -153,7 +156,10 @@ module HashHelper =
             match splitString with
             | [| ""; "argon2id"; "v=19"; parameters; saltBase64; hashBase64 |] ->
                 let! memory, iterations, parallelism = readParams parameters
-                let hashLength = hashBase64 |> System.Convert.FromBase64String |> Array.length
+                let hashLength =
+                    hashBase64
+                    |> System.Convert.FromBase64String
+                    |> Array.length
                 let saltBytes = System.Convert.FromBase64String (saltBase64)
                 let cmpHashBase64 = argon2idHash password saltBytes memory iterations parallelism hashLength
                 let ourBest = (memory, iterations, parallelism, hashLength) = (argon2id_memory, argon2id_iterations, argon2id_parallelism, argon2id_hash_length)
@@ -172,8 +178,5 @@ module HashHelper =
             let! userId = validateKey request.UserId (nameof request.UserId)
             let! options = validateOptions request.Options
 
-            return {
-                UserId = userId
-                Options = options
-            }
+            return { UserId = userId; Options = options }
         }
