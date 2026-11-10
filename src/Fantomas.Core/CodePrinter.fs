@@ -1797,33 +1797,7 @@ let genExprCore (e: Expr) : Context -> Context =
                 node.SubsequentExpressions
                 (fun (operator, rhs) -> genSingleTextNode operator +> sepSpace +> genExpr rhs)
 
-        let multilineExpr =
-            match node.SubsequentExpressions with
-            | [] -> genExpr node.LeadingExpr
-            | (operator, e2) :: es ->
-
-            let m =
-                Fantomas.FCS.Text.Range.unionRanges (Expr.Node node.LeadingExpr).Range (Expr.Node e2).Range
-
-            genMultilineInfixExpr (ExprInfixAppNode(node.LeadingExpr, operator, e2, m))
-            +> sepNln
-            +> col
-                sepNln
-                es
-                (fun (operator, e) ->
-                    genSingleTextNode operator
-                    +> sepNlnWhenWriteBeforeNewlineNotEmptyOr sepSpace
-                    +> (fun ctx ->
-                        match e with
-                        | Expr.Lambda _ when
-                            newLineInfixOps.Contains operator.Text
-                            && ctx.Config.IndentSize <= operator.Text.Length
-                            ->
-                            // Special measure to account for https://github.com/fsprojects/fantomas/issues/870
-                            (indent +> genExprInMultilineInfixExpr e +> unindent) ctx
-                        | _ -> genExprInMultilineInfixExpr e ctx
-                    )
-                )
+        let multilineExpr: Context -> Context = genMultilineSameInfixApps node
 
         let allExprs = node.LeadingExpr :: List.map snd node.SubsequentExpressions
 
@@ -3394,7 +3368,11 @@ let consecutiveRuns (isRow: 'T -> bool) (startsRun: 'T -> 'T -> bool) (items: 'T
     go [] [] items
 
 /// The cells of a clause's pattern that fsharp_align_rows lines up, and the shape two patterns must
-/// share for that: the items of a tuple, or the operands of a chain of `::`.
+/// share for that: the items of a tuple, or the operands of a chain of `::`. What a chain ends in
+/// is no cell: nothing follows it to line up, so it stays against its `::`.
+///
+///     | a0 ::  a1 :: _    -> 1
+///     | a0 :: '=' :: tail -> 2
 let patternCells (p: Pattern) : (string * Pattern list) option =
     match p with
     | Pattern.Tuple node ->
@@ -3414,13 +3392,13 @@ let patternCells (p: Pattern) : (string * Pattern list) option =
             | _ -> [ p ]
 
         let operands: Pattern list = operands p
-        Some($"cons %d{operands.Length}", operands)
+        Some($"cons %d{operands.Length}", List.take (operands.Length - 1) operands)
     | _ -> None
 
 /// The padding of the patterns of consecutive clauses of the same shape (fsharp_align_rows): every
-/// cell is right-aligned in its column, so that the commas or the `::` line up. The body of such a
-/// clause may be multiline; a guard, a pattern of another shape, or trivia before a clause ends the
-/// run.
+/// cell of `patternCells` is right-aligned in its column, so that the commas or the `::` line up.
+/// The body of such a clause may be multiline; a guard, a pattern of another shape, or trivia before
+/// a clause ends the run.
 ///
 ///     |  true,     _, false -> return! Ok(true, None)
 ///     |  true, false,  true ->
@@ -3718,6 +3696,26 @@ let tryGenHangingChain (e: Expr) (ctx: Context) : (Context -> Context) option =
 
     Some(withPadding padding (genNode (Expr.Node e) genChain))
 
+/// fsharp_multiline_let_pipelines: the pipeline of a `let` of a value with two or more `|>`, which
+/// goes on lines of its own however short it is.
+///
+///     let lookup =
+///         [ for c in allowed -> c ]
+///         |> List.mapi (fun i a -> a, i)
+///         |> Map.ofList
+let tryMultilineLetPipeline (b: BindingNode) (ctx: Context) : ExprSameInfixAppsNode option =
+    match b.Expr with
+    | Expr.SameInfixApps node when
+        ctx.Config.MultilineLetPipelines
+        && b.In.IsNone
+        && b.LeadingKeyword.Content |> List.exists (fun keyword -> keyword.Text = "let")
+        && node.SubsequentExpressions.Length >= 2
+        && node.SubsequentExpressions
+           |> List.forall (fun (operator, _) -> operator.Text = "|>")
+        ->
+        Some node
+    | _ -> None
+
 let genClauses (clauses: MatchClauseNode list) (ctx: Context) : Context =
     let lastIndex: int = clauses.Length - 1
 
@@ -3913,6 +3911,34 @@ let genIfStart (ifKeyword: IfKeywordNode) (condition: Expr) (thenKeyword: Single
         (col sepNone beforeCondition (genTrivia (Expr.Node condition))
          +> genExpr condition)
         thenKeyword
+
+/// A chain of operators of the same precedence, with every operator at the start of a line.
+let genMultilineSameInfixApps (node: ExprSameInfixAppsNode) : Context -> Context =
+    match node.SubsequentExpressions with
+    | [] -> genExpr node.LeadingExpr
+    | (operator, e2) :: es ->
+
+    let m: Fantomas.FCS.Text.Range =
+        Fantomas.FCS.Text.Range.unionRanges (Expr.Node node.LeadingExpr).Range (Expr.Node e2).Range
+
+    genMultilineInfixExpr (ExprInfixAppNode(node.LeadingExpr, operator, e2, m))
+    +> sepNln
+    +> col
+        sepNln
+        es
+        (fun (operator, e) ->
+            genSingleTextNode operator
+            +> sepNlnWhenWriteBeforeNewlineNotEmptyOr sepSpace
+            +> fun ctx ->
+                match e with
+                | Expr.Lambda _ when
+                    newLineInfixOps.Contains operator.Text
+                    && ctx.Config.IndentSize <= operator.Text.Length
+                    ->
+                    // Special measure to account for https://github.com/fsprojects/fantomas/issues/870
+                    (indent +> genExprInMultilineInfixExpr e +> unindent) ctx
+                | _ -> genExprInMultilineInfixExpr e ctx
+        )
 
 // Caller of this function is responsible for genNode!
 let genMultilineInfixExpr (node: ExprInfixAppNode) =
@@ -5004,7 +5030,12 @@ let genBinding (b: BindingNode) (ctx: Context) : Context =
                         | Some genHangingChain -> genHangingChain ctx
                         | None -> indentSepNlnUnindentUnlessStroustrup genExpr b.Expr ctx
 
-                isShortExpression ctx.Config.MaxValueBindingWidth short long ctx
+                match tryMultilineLetPipeline b ctx with
+                | None -> isShortExpression ctx.Config.MaxValueBindingWidth short long ctx
+                | Some pipeline ->
+                    (prefix
+                     +> indentSepNlnUnindent (atCurrentColumn (genMultilineSameInfixApps pipeline) |> genNode pipeline))
+                        ctx
             )
 
     genNode b (binding +> optSingle (fun inNode -> sepSpace +> genSingleTextNode inNode) b.In) ctx

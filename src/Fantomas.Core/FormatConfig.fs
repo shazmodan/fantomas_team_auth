@@ -293,6 +293,11 @@ type FormatConfig =
         [<DisplayName("Hang the operators of a long chain after the equals sign")>]
         [<Description("A chain of one operator that does not fit on one line keeps its first operand on the line of the binding's equals sign, and every further line starts with the operator one column after the equals sign, so the operands line up.")>]
         HangingInfixOperators: bool
+
+        [<Category("Convention")>]
+        [<DisplayName("Put every pipe of a let on a line of its own")>]
+        [<Description("A let of a value whose right-hand side has two or more |> puts its first operand and each |> on a line of their own, however short the expression is.")>]
+        MultilineLetPipelines: bool
     }
 
     member x.IsStroustrupStyle = x.MultilineBracketStyle = Stroustrup
@@ -338,4 +343,5 @@ type FormatConfig =
             AlignRows = false
             AlignMatchArrows = false
             HangingInfixOperators = false
+            MultilineLetPipelines = false
         }

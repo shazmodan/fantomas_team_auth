@@ -1,6 +1,6 @@
 (*---
-# The operands of `::` patterns of the same length are right-aligned, so every `::` lines up. The
-# wildcard clause of another shape only lines up its arrow.
+# The operands of `::` patterns of the same length are right-aligned, so every `::` lines up, and
+# what a chain ends in stays against its `::`. The wildcard clause of another shape only lines up its arrow.
 fsharp_align_rows = true
 fsharp_align_match_arrows = true
 max_line_length = 200

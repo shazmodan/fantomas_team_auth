@@ -1197,7 +1197,8 @@ brackets follows it.
 
 The patterns of consecutive match clauses line up too, when they are tuples with as many items or
 chains of `::` with as many operands. Each cell is right-aligned in its column, so the commas or the
-`::` line up, and a clause with a multiline body takes part.
+`::` line up, except what a chain of `::` ends in, which stays against its `::`. A clause with a
+multiline body takes part.
 
 A blank line or a comment ends a run of rows, as does a clause with a guard. Takes `true` or
 `false`. Lining tokens up on a column taken from the widest cell goes against
@@ -1283,6 +1284,30 @@ let pack x0 x1 x2 x3 x4 =
     """
 fsharp_hanging_infix_operators = true
 fsharp_align_rows = true
+    """
+(*** include-output ***)
+
+(**
+<fantomas-setting red></fantomas-setting>
+### fsharp_multiline_let_pipelines
+<copy-to-clipboard text="fsharp_multiline_let_pipelines = true"></copy-to-clipboard>
+
+A `let` of a value whose right-hand side has two or more `|>` puts its first operand and each `|>`
+on a line of their own, however short the expression is. One `|>`, a function binding, a member and
+a pipeline anywhere else keep the usual layout. Takes `true` or `false`.
+*)
+
+(*** hide ***)
+printfn
+    $"# Default\n{toEditorConfigName (nameof FormatConfig.Default.MultilineLetPipelines)} = {FormatConfig.Default.MultilineLetPipelines.ToString().ToLower()}"
+(*** include-output ***)
+
+formatCode
+    """
+let lookup = [ for c in allowed -> c ] |> List.mapi (fun i a -> a, i) |> Map.ofList
+    """
+    """
+fsharp_multiline_let_pipelines = true
     """
 (*** include-output ***)
 
