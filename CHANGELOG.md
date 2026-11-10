@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Setting `fsharp_multiline_let_pipelines` puts a `let` of a value with two or more `|>` on lines of its own. [#15](https://github.com/shazmodan/fantomas-team-auth/pull/15)
+
+### Changed
+
+- Setting `fsharp_align_rows` no longer pads what a `::` chain in a pattern ends in, so `_` stays against its `::`. [#15](https://github.com/shazmodan/fantomas-team-auth/pull/15)
+
 ## [8.1.1-svea.2] - 2026-11-09
 
 ### Added
